@@ -10,7 +10,10 @@ let token = sessionStorage.token || "",
   readOnly = false,
   current = [],
   view = "files",
-  mode = "grid";
+  mode = "grid",
+  pageOffset = 0,
+  hasMore = false,
+  pageLoading = false;
 const api = async (url, opt = {}) => {
   opt.headers = { ...(opt.headers || {}), Authorization: "Bearer " + token };
   const r = await fetch(url, opt);
@@ -71,12 +74,29 @@ async function showApp() {
   await buildTree();
 }
 if (token) showApp();
-async function load() {
-  current =
-    view === "trash"
-      ? (await api("/api/trash")) || []
-      : (await api("/api/files?path=" + encodeURIComponent(path))) || [];
-  render();
+async function load(reset = true) {
+  if (pageLoading) return;
+  pageLoading = true;
+  try {
+    if (view === "trash") {
+      current = (await api("/api/trash")) || [];
+      hasMore = false;
+      pageOffset = 0;
+    } else {
+      if (reset) {
+        current = [];
+        pageOffset = 0;
+      }
+      const q = `/api/files-page?path=${encodeURIComponent(path)}&offset=${pageOffset}&limit=200&sort=${encodeURIComponent($("#sort").value)}`,
+        page = await api(q);
+      current = reset ? page.items : [...current, ...page.items];
+      hasMore = page.hasMore;
+      pageOffset = current.length;
+    }
+    render();
+  } finally {
+    pageLoading = false;
+  }
 }
 function render() {
   const sort = $("#sort").value,
@@ -92,6 +112,10 @@ function render() {
   files.innerHTML = "";
   empty.classList.toggle("hidden", data.length > 0);
   $("#itemCount").textContent = data.length + " 个项目";
+  $("#loadMoreWrap").classList.toggle("hidden", !hasMore || view === "trash");
+  $("#loadHint").textContent = hasMore
+    ? `已加载 ${data.length} 项，每次加载 200 项`
+    : "";
   data.forEach((x) => {
     const n = name(x),
       dir = x.isDir || x.IsDir,
@@ -210,11 +234,14 @@ $("#newFolder").onclick = async () => {
 };
 $("#refreshBtn").onclick = load;
 $("#treeRefresh").onclick = buildTree;
-$("#sort").onchange = render;
+$("#sort").onchange = () => load(true);
+$("#loadMore").onclick = () => load(false);
 $("#search").oninput = async (e) => {
   const q = e.target.value.trim();
   if (!q) return load();
   current = (await api("/api/search?q=" + encodeURIComponent(q))) || [];
+  hasMore = false;
+  pageOffset = current.length;
   render();
 };
 $("#gridView").onclick = () => setMode("grid");
@@ -281,14 +308,30 @@ async function previewFile(x) {
   try {
     const ext = name(x).split(".").pop().toLowerCase();
     if (ext === "dwg") toast("正在请求主机生成 CAD 预览…");
-    const officeFormats = ["doc","docx","xls","xlsx","ppt","pptx","odt","ods","odp"];
-    const endpoint = ext === "dwg" ? "/api/cad-preview" : officeFormats.includes(ext) ? "/api/office-preview" : "/api/preview",
+    const officeFormats = [
+      "doc",
+      "docx",
+      "xls",
+      "xlsx",
+      "ppt",
+      "pptx",
+      "odt",
+      "ods",
+      "odp",
+    ];
+    const endpoint =
+        ext === "dwg"
+          ? "/api/cad-preview"
+          : officeFormats.includes(ext)
+            ? "/api/office-preview"
+            : "/api/preview",
       r = await api(endpoint + "?path=" + encodeURIComponent(x.path)),
       blob = await r.blob(),
       u = URL.createObjectURL(blob),
       body = $("#previewBody");
     $("#previewName").textContent = name(x);
-    if (officeFormats.includes(ext)) body.innerHTML = `<iframe src="${u}"></iframe>`;
+    if (officeFormats.includes(ext))
+      body.innerHTML = `<iframe src="${u}"></iframe>`;
     else if (ext === "dwg") {
       body.innerHTML = `<div class="cadTools"><button data-cad="out">−</button><span id="cadZoom">100%</span><button data-cad="in">＋</button><button data-cad="fit">适应窗口</button><button data-cad="full">全屏</button></div><div class="cadViewport"><img src="${u}" draggable="false"></div>`;
       setupCAD(body);

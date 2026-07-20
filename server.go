@@ -69,6 +69,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/login", s.login)
 	mux.HandleFunc("/api/register", s.register)
 	mux.Handle("/api/files", s.tokenAuth(http.HandlerFunc(s.files)))
+	mux.Handle("/api/files-page", s.tokenAuth(http.HandlerFunc(s.filesPage)))
 	mux.Handle("/api/upload", s.tokenAuth(http.HandlerFunc(s.upload)))
 	mux.Handle("/api/mkdir", s.tokenAuth(http.HandlerFunc(s.mkdir)))
 	mux.Handle("/api/delete", s.tokenAuth(http.HandlerFunc(s.delete)))

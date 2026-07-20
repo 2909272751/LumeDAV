@@ -12,9 +12,9 @@ var trayIcon []byte
 func (a *App) startTray() {
 	go systray.Run(func() {
 		systray.SetIcon(trayIcon)
-		systray.SetTitle("LumeDAV")
-		systray.SetTooltip("LumeDAV WebDAV 服务")
-		show := systray.AddMenuItem("打开 LumeDAV", "显示主窗口")
+		systray.SetTitle("LumeDAV v" + appVersion)
+		systray.SetTooltip("LumeDAV v" + appVersion + " · WebDAV 服务")
+		show := systray.AddMenuItem("打开 LumeDAV v"+appVersion, "显示主窗口")
 		toggle := systray.AddMenuItem("启动 / 停止服务", "切换服务状态")
 		systray.AddSeparator()
 		quit := systray.AddMenuItem("退出", "停止服务并退出")

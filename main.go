@@ -17,7 +17,7 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:     "LumeDAV",
+		Title:     "LumeDAV v" + appVersion,
 		Width:     1024,
 		Height:    720,
 		MinWidth:  860,

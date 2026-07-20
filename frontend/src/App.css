@@ -55,6 +55,21 @@ aside {
   display: block;
   font-size: 17px;
 }
+.brandName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.brandName em {
+  border: 1px solid #7382aa45;
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: #9ba8cc;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 1.2;
+}
 .brand span {
   display: block;
   color: #7e89a9;

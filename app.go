@@ -121,6 +121,9 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.startTray()
+	if a.cfg.AutoStart {
+		_ = setAutoStart(true)
+	}
 	if len(os.Args) > 1 && os.Args[1] == "--autostart" && a.configReady() {
 		_ = a.startLocked()
 	}
@@ -436,31 +439,13 @@ func (a *App) RevokeInvite(code string) error {
 	}
 	return a.saveConfig()
 }
-func (a *App) CADPreviewStatus() string {
-	if _, e := os.Stat(filepath.Join(cadToolDir(), "dwg2SVG.exe")); e == nil {
-		return "ready"
-	}
-	return "missing"
-}
-func (a *App) InstallCADPreviewEngine() string {
-	if _, e := ensureCADTool(); e != nil {
-		return e.Error()
-	}
-	return "ready"
-}
-func (a *App) ClearCADPreviewCache() error {
-	p := filepath.Join(lumeDataDir(), "cache", "cad")
-	if e := os.RemoveAll(p); e != nil {
-		return e
-	}
-	return os.MkdirAll(p, 0700)
-}
 func (a *App) OfficePreviewStatus() string { return officeStatus() }
+func (a *App) GetVersion() string          { return appVersion }
 func (a *App) OpenLibreOfficeDownload() {
 	runtime.BrowserOpenURL(a.ctx, "https://www.libreoffice.org/download/download-libreoffice/")
 }
 func (a *App) ClearOfficePreviewCache() error {
-	p := filepath.Join(lumeDataDir(), "cache", "office")
+	p := officeCacheDir()
 	if e := os.RemoveAll(p); e != nil {
 		return e
 	}

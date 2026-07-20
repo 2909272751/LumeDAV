@@ -30,16 +30,21 @@ import (
 var webAssets embed.FS
 
 type Server struct {
-	cfgMu      sync.RWMutex
-	cfg        Config
-	http       *http.Server
-	tokens     sync.Map
-	security   sync.Mutex
-	failures   map[string]*loginFailure
-	started    time.Time
-	requests   atomic.Int64
-	uploaded   atomic.Int64
-	downloaded atomic.Int64
+	cfgMu           sync.RWMutex
+	cfg             Config
+	http            *http.Server
+	tokens          sync.Map
+	security        sync.Mutex
+	failures        map[string]*loginFailure
+	started         time.Time
+	requests        atomic.Int64
+	uploaded        atomic.Int64
+	downloaded      atomic.Int64
+	archiveMu       sync.RWMutex
+	archiveTasks    map[string]*folderArchiveTask
+	archiveQueue    chan *folderArchiveTask
+	archiveStop     chan struct{}
+	archiveStopOnce sync.Once
 }
 type loginFailure struct {
 	Count        int
@@ -60,7 +65,14 @@ type fileItem struct {
 	Modified time.Time `json:"modified"`
 }
 
-func NewServer(cfg Config) *Server { return &Server{cfg: cfg} }
+func NewServer(cfg Config) *Server {
+	return &Server{
+		cfg:          cfg,
+		archiveTasks: map[string]*folderArchiveTask{},
+		archiveQueue: make(chan *folderArchiveTask, archiveTaskLimit),
+		archiveStop:  make(chan struct{}),
+	}
+}
 
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
@@ -68,6 +80,10 @@ func (s *Server) Start() error {
 	mux.Handle("/share/", http.HandlerFunc(s.temporaryDAV))
 	mux.HandleFunc("/api/login", s.login)
 	mux.HandleFunc("/api/register", s.register)
+	mux.HandleFunc("/api/version", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_ = json.NewEncoder(w).Encode(map[string]string{"version": appVersion})
+	})
 	mux.Handle("/api/files", s.tokenAuth(http.HandlerFunc(s.files)))
 	mux.Handle("/api/files-page", s.tokenAuth(http.HandlerFunc(s.filesPage)))
 	mux.Handle("/api/upload", s.tokenAuth(http.HandlerFunc(s.upload)))
@@ -75,10 +91,13 @@ func (s *Server) Start() error {
 	mux.Handle("/api/delete", s.tokenAuth(http.HandlerFunc(s.delete)))
 	mux.Handle("/api/rename", s.tokenAuth(http.HandlerFunc(s.rename)))
 	mux.Handle("/api/download", s.tokenAuth(http.HandlerFunc(s.download)))
+	mux.Handle("/api/folder-download/start", s.tokenAuth(http.HandlerFunc(s.folderArchiveStart)))
+	mux.Handle("/api/folder-download/status", s.tokenAuth(http.HandlerFunc(s.folderArchiveStatus)))
+	mux.Handle("/api/folder-download/cancel", s.tokenAuth(http.HandlerFunc(s.folderArchiveCancel)))
+	mux.HandleFunc("/api/folder-download/content", s.folderArchiveContent)
 	mux.Handle("/api/stats", s.tokenAuth(http.HandlerFunc(s.stats)))
 	mux.Handle("/api/search", s.tokenAuth(http.HandlerFunc(s.search)))
 	mux.Handle("/api/preview", s.tokenAuth(http.HandlerFunc(s.preview)))
-	mux.Handle("/api/cad-preview", s.tokenAuth(http.HandlerFunc(s.cadPreview)))
 	mux.Handle("/api/office-preview", s.tokenAuth(http.HandlerFunc(s.officePreview)))
 	mux.Handle("/api/trash", s.tokenAuth(http.HandlerFunc(s.trash)))
 	mux.Handle("/api/trash/restore", s.tokenAuth(http.HandlerFunc(s.restoreTrash)))
@@ -92,11 +111,14 @@ func (s *Server) Start() error {
 	if err != nil {
 		return err
 	}
+	go s.archiveWorker()
+	go s.archiveCleanupLoop()
 	go s.http.Serve(ln)
 	return nil
 }
 
 func (s *Server) Stop() error {
+	s.stopArchiveManager()
 	if s.http == nil {
 		return nil
 	}
@@ -160,12 +182,21 @@ func (s *Server) tokenAuth(next http.Handler) http.Handler {
 			http.Error(w, "Unauthorized", 401)
 			return
 		}
-		if v.(session).ReadOnly && r.URL.Path != "/api/files" && r.URL.Path != "/api/download" && r.URL.Path != "/api/stats" && r.URL.Path != "/api/search" && r.URL.Path != "/api/preview" {
+		if v.(session).ReadOnly && !readOnlyEndpoint(r.URL.Path) {
 			http.Error(w, "只读模式", 403)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func readOnlyEndpoint(path string) bool {
+	switch path {
+	case "/api/files", "/api/files-page", "/api/download", "/api/folder-download/start", "/api/folder-download/status", "/api/folder-download/cancel", "/api/stats", "/api/search", "/api/preview", "/api/office-preview":
+		return true
+	default:
+		return false
+	}
 }
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
@@ -287,7 +318,7 @@ func (s *Server) shares() map[string]string {
 	}
 	out := map[string]string{}
 	for _, f := range folders {
-		name := filepath.Base(f)
+		name := shareName(f)
 		base := name
 		for i := 2; out[name] != ""; i++ {
 			name = base + " (" + strconv.Itoa(i) + ")"
@@ -295,6 +326,24 @@ func (s *Server) shares() map[string]string {
 		out[name] = f
 	}
 	return out
+}
+
+func shareName(folder string) string {
+	clean := filepath.Clean(folder)
+	volume := filepath.VolumeName(clean)
+	if volume != "" && strings.Trim(clean[len(volume):], `/\`) == "" {
+		if len(volume) == 2 && volume[1] == ':' {
+			return strings.ToUpper(volume[:1]) + "盘"
+		}
+		if base := filepath.Base(volume); base != "." && strings.Trim(base, `/\`) != "" {
+			return base
+		}
+	}
+	name := filepath.Base(clean)
+	if name == "." || strings.Trim(name, `/\`) == "" {
+		return "共享文件"
+	}
+	return name
 }
 func (s *Server) safe(r *http.Request, rel string) (string, error) {
 	sess := s.rootFor(r)
@@ -313,9 +362,16 @@ func (s *Server) safe(r *http.Request, rel string) (string, error) {
 		}
 	}
 	p := filepath.Join(sess.Root, rel)
-	root, _ := filepath.Abs(sess.Root)
-	abs, _ := filepath.Abs(p)
-	if abs != root && !strings.HasPrefix(strings.ToLower(abs), strings.ToLower(root)+string(filepath.Separator)) {
+	root, err := filepath.Abs(sess.Root)
+	if err != nil {
+		return "", err
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	within, err := filepath.Rel(root, abs)
+	if err != nil || within == ".." || strings.HasPrefix(within, ".."+string(filepath.Separator)) || filepath.IsAbs(within) {
 		return "", errors.New("invalid path")
 	}
 	return abs, nil

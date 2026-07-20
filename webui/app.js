@@ -13,7 +13,13 @@ let token = sessionStorage.token || "",
   mode = "grid",
   pageOffset = 0,
   hasMore = false,
-  pageLoading = false;
+  pageLoading = false,
+  loadRequest = 0,
+  archiveTask = null,
+  archivePoll = 0,
+  archiveDownloadStarted = false,
+  fileDownloadAbort = null,
+  activePreviewURL = "";
 const api = async (url, opt = {}) => {
   opt.headers = { ...(opt.headers || {}), Authorization: "Bearer " + token };
   const r = await fetch(url, opt);
@@ -25,6 +31,13 @@ const api = async (url, opt = {}) => {
   if (!r.ok) throw Error(await r.text());
   return r.headers.get("content-type")?.includes("json") ? r.json() : r;
 };
+fetch("/api/version")
+  .then((response) => response.json())
+  .then(({ version }) => {
+    $("#webVersion").textContent = "v" + version;
+    document.title = "LumeDAV v" + version;
+  })
+  .catch(() => {});
 const invite = new URLSearchParams(location.search).get("invite");
 if (invite) {
   login.classList.add("hidden");
@@ -70,32 +83,42 @@ $("#loginForm").onsubmit = async (e) => {
 async function showApp() {
   login.classList.add("hidden");
   app.classList.remove("hidden");
+  const saved = history.state;
+  if (saved?.lumeNavigation) {
+    path = typeof saved.path === "string" ? saved.path : "";
+    view = saved.view === "trash" ? "trash" : "files";
+  }
+  syncNavigationUI();
   await load();
   await buildTree();
+  history.replaceState(navigationState(), "");
 }
 if (token) showApp();
 async function load(reset = true) {
-  if (pageLoading) return;
+  if (pageLoading && !reset) return;
+  const request = ++loadRequest,
+    requestedPath = path,
+    requestedView = view,
+    requestedOffset = reset ? 0 : pageOffset;
   pageLoading = true;
   try {
-    if (view === "trash") {
-      current = (await api("/api/trash")) || [];
+    if (requestedView === "trash") {
+      const items = (await api("/api/trash")) || [];
+      if (request !== loadRequest) return;
+      current = items;
       hasMore = false;
       pageOffset = 0;
     } else {
-      if (reset) {
-        current = [];
-        pageOffset = 0;
-      }
-      const q = `/api/files-page?path=${encodeURIComponent(path)}&offset=${pageOffset}&limit=200&sort=${encodeURIComponent($("#sort").value)}`,
+      const q = `/api/files-page?path=${encodeURIComponent(requestedPath)}&offset=${requestedOffset}&limit=200&sort=${encodeURIComponent($("#sort").value)}`,
         page = await api(q);
+      if (request !== loadRequest) return;
       current = reset ? page.items : [...current, ...page.items];
       hasMore = page.hasMore;
       pageOffset = current.length;
     }
     render();
   } finally {
-    pageLoading = false;
+    if (request === loadRequest) pageLoading = false;
   }
 }
 function render() {
@@ -161,11 +184,56 @@ function fileType(n) {
   const e = n.includes(".") ? n.split(".").pop().toUpperCase() : "文件";
   return e + " 文件";
 }
-function go(p) {
-  path = p;
-  load();
+function navigationState(extra = {}) {
+  return { lumeNavigation: true, path, view, ...extra };
+}
+function syncNavigationUI() {
+  document
+    .querySelectorAll("[data-view]")
+    .forEach((button) =>
+      button.classList.toggle("active", button.dataset.view === view),
+    );
+  const parts = path.split("/").filter(Boolean),
+    canGoBack = view === "trash" || parts.length > 0,
+    back = $("#backBtn");
+  $("#pageTitle").textContent =
+    view === "trash" ? "回收站" : parts.at(-1) || "我的文件";
+  document
+    .querySelector(".headActions")
+    .classList.toggle("hidden", view === "trash");
+  back.disabled = !canGoBack;
+  back.title = canGoBack
+    ? view === "trash"
+      ? "返回我的文件"
+      : "返回上一级目录"
+    : "已经在最上层";
+}
+function go(p, { record = true } = {}) {
+  const next = typeof p === "string" ? p : "",
+    changed = view !== "files" || path !== next;
+  view = "files";
+  path = next;
+  $("#search").value = "";
+  syncNavigationUI();
+  if (record && changed) history.pushState(navigationState(), "");
+  load(true);
   markTree();
   if (innerWidth < 760) $("#sidebar").classList.remove("open");
+}
+function setView(next, { record = true } = {}) {
+  if (next !== "files" && next !== "trash") return;
+  const changed = view !== next;
+  view = next;
+  $("#search").value = "";
+  syncNavigationUI();
+  if (record && changed) history.pushState(navigationState(), "");
+  load(true);
+}
+function navigateUp() {
+  if (view === "trash") return setView("files");
+  const parts = path.split("/").filter(Boolean);
+  if (!parts.length) return;
+  go(parts.slice(0, -1).join("/"));
 }
 function crumbs() {
   if (view === "trash") {
@@ -239,7 +307,11 @@ $("#loadMore").onclick = () => load(false);
 $("#search").oninput = async (e) => {
   const q = e.target.value.trim();
   if (!q) return load();
-  current = (await api("/api/search?q=" + encodeURIComponent(q))) || [];
+  const request = ++loadRequest;
+  pageLoading = false;
+  const results = (await api("/api/search?q=" + encodeURIComponent(q))) || [];
+  if (request !== loadRequest || e.target.value.trim() !== q) return;
+  current = results;
   hasMore = false;
   pageOffset = current.length;
   render();
@@ -254,26 +326,43 @@ function setMode(m) {
   $("#listView").classList.toggle("active", m === "list");
 }
 document.querySelectorAll("[data-view]").forEach(
-  (b) =>
-    (b.onclick = () => {
-      view = b.dataset.view;
-      document
-        .querySelectorAll("[data-view]")
-        .forEach((x) => x.classList.toggle("active", x === b));
-      $("#pageTitle").textContent = view === "trash" ? "回收站" : "我的文件";
-      document
-        .querySelector(".headActions")
-        .classList.toggle("hidden", view === "trash");
-      load();
-    }),
+  (button) => (button.onclick = () => setView(button.dataset.view)),
 );
+$("#backBtn").onclick = navigateUp;
+window.addEventListener("popstate", (event) => {
+  hidePreview();
+  hideArchiveDialog();
+  hideFileDownloadDialog();
+  menu.classList.add("hidden");
+  const state = event.state;
+  if (!state?.lumeNavigation) return;
+  const nextPath = typeof state.path === "string" ? state.path : "",
+    nextView = state.view === "trash" ? "trash" : "files",
+    changed = path !== nextPath || view !== nextView;
+  path = nextPath;
+  view = nextView;
+  $("#search").value = "";
+  syncNavigationUI();
+  markTree();
+  if (changed) load(true);
+});
 $("#menuToggle").onclick = () => $("#sidebar").classList.toggle("open");
 function openMenu(e, x) {
   selected = x;
+  const directory = isDirectory(x),
+    inTrash = view === "trash";
+  menu.querySelector('[data-act="preview"]').style.display =
+    !inTrash && !directory ? "block" : "none";
+  const downloadButton = menu.querySelector('[data-act="download"]');
+  downloadButton.style.display = inTrash ? "none" : "block";
+  downloadButton.textContent = directory ? "打包下载" : "下载";
+  menu.querySelector('[data-act="rename"]').style.display = inTrash
+    ? "none"
+    : "block";
   menu.querySelector('[data-act="restore"]').style.display =
-    view === "trash" ? "block" : "none";
+    inTrash ? "block" : "none";
   menu.querySelector('[data-act="delete"]').style.display =
-    view === "trash" ? "none" : "block";
+    inTrash ? "none" : "block";
   menu.style.left = Math.min(e.clientX - 100, innerWidth - 150) + "px";
   menu.style.top = Math.min(e.clientY, innerHeight - 190) + "px";
   menu.classList.remove("hidden");
@@ -286,7 +375,10 @@ menu.onclick = async (e) => {
   const a = e.target.dataset.act;
   if (!a) return;
   if (a === "preview") previewFile(selected);
-  if (a === "download") download(selected.path);
+  if (a === "download") {
+    if (isDirectory(selected)) startFolderDownload(selected);
+    else download(selected.path);
+  }
   if (a === "rename") {
     const n = prompt("新名称", selected.name);
     if (n) {
@@ -303,11 +395,148 @@ menu.onclick = async (e) => {
     load();
   }
 };
+function isDirectory(item) {
+  return Boolean(item?.isDir || item?.IsDir);
+}
+async function startFolderDownload(item) {
+  if (!item?.path) return toast("无法识别文件夹路径");
+  clearTimeout(archivePoll);
+  archiveTask = null;
+  archiveDownloadStarted = false;
+  $("#archiveTitle").textContent = name(item) + ".zip";
+  $("#archiveState").textContent = "正在创建任务";
+  $("#archiveMessage").textContent = "准备扫描文件夹内容…";
+  $("#archiveFiles").textContent = "0 个文件";
+  $("#archiveSize").textContent = "0 B";
+  $("#archivePercent").textContent = "0%";
+  $("#archiveBar").style.width = "0%";
+  $("#archiveBar").classList.add("indeterminate");
+  $("#archiveCancel").classList.remove("hidden");
+  $("#archiveDownload").classList.add("hidden");
+  $("#archiveDialog").classList.remove("hidden");
+  history.pushState(navigationState({ lumeArchive: true }), "");
+  try {
+    archiveTask = await api("/api/folder-download/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: item.path }),
+    });
+    updateArchiveDialog(archiveTask);
+    scheduleArchivePoll(300);
+  } catch (error) {
+    showArchiveError(error.message);
+  }
+}
+function scheduleArchivePoll(delay = 800) {
+  clearTimeout(archivePoll);
+  archivePoll = setTimeout(pollArchiveTask, delay);
+}
+async function pollArchiveTask() {
+  if (!archiveTask?.id) return;
+  try {
+    archiveTask = await api(
+      "/api/folder-download/status?id=" + encodeURIComponent(archiveTask.id),
+    );
+    updateArchiveDialog(archiveTask);
+    if (["queued", "scanning", "packing", "ready", "downloading"].includes(archiveTask.status))
+      scheduleArchivePoll();
+  } catch (error) {
+    showArchiveError(error.message);
+  }
+}
+function updateArchiveDialog(task) {
+  const labels = {
+      queued: "等待打包",
+      scanning: "正在扫描文件夹",
+      packing: "正在生成压缩包",
+      ready: "压缩包已准备完成",
+      downloading: "正在传输下载",
+      complete: "文件夹下载完成",
+      cancelled: "任务已取消",
+      error: "打包失败",
+    },
+    messages = {
+      queued: "前面有任务时会自动排队，请稍候。",
+      scanning: "正在统计文件数量和大小…",
+      packing: "大文件夹正在本机临时打包，可安全离开此目录。",
+      ready:
+        task.mode === "stream"
+          ? "此文件夹将边压缩边传输，不占用临时磁盘空间。"
+          : "支持断点续传，临时压缩包将在传输后自动删除。",
+      downloading: "浏览器正在接收文件，可以查看浏览器下载进度。",
+      complete: "传输已完成，临时压缩包会在 10 分钟后清理。",
+      cancelled: "临时文件已清理。",
+      error: task.error || "请稍后重试。",
+    },
+    indeterminate = task.status === "queued" || task.status === "scanning",
+    progress = Math.max(0, Math.min(100, task.progress || 0));
+  $("#archiveState").textContent = labels[task.status] || "处理中";
+  $("#archiveMessage").textContent = messages[task.status] || "请稍候…";
+  $("#archiveFiles").textContent = `${task.processedFiles || task.totalFiles || 0} / ${task.totalFiles || 0} 个文件`;
+  $("#archiveSize").textContent = `${size(task.processedBytes || 0)} / ${size(task.totalBytes || 0)}`;
+  $("#archivePercent").textContent = progress + "%";
+  $("#archiveBar").classList.toggle("indeterminate", indeterminate);
+  $("#archiveBar").style.width = progress + "%";
+  const cancellable = ["queued", "scanning", "packing", "ready"].includes(
+    task.status,
+  );
+  $("#archiveCancel").classList.toggle("hidden", !cancellable);
+  const canDownload = Boolean(task.downloadUrl);
+  $("#archiveDownload").classList.toggle("hidden", !canDownload);
+  $("#archiveDownload").textContent =
+    task.status === "complete" ? "再次下载" : "开始下载";
+  if (task.status === "ready" && canDownload && !archiveDownloadStarted) {
+    triggerArchiveDownload();
+  }
+  if (task.status === "complete") toast("文件夹下载完成");
+}
+function triggerArchiveDownload() {
+  if (!archiveTask?.downloadUrl) return;
+  archiveDownloadStarted = true;
+  const anchor = document.createElement("a");
+  anchor.href = archiveTask.downloadUrl;
+  anchor.download = archiveTask.name + ".zip";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  $("#archiveDownload").textContent = "重新开始下载";
+  toast("已交给浏览器下载");
+}
+function showArchiveError(message) {
+  clearTimeout(archivePoll);
+  $("#archiveBar").classList.remove("indeterminate");
+  $("#archiveState").textContent = "打包失败";
+  $("#archiveMessage").textContent = message || "请稍后重试";
+  $("#archiveCancel").classList.add("hidden");
+}
+function hideArchiveDialog() {
+  $("#archiveDialog").classList.add("hidden");
+}
+$("#archiveClose").onclick = () => {
+  const hasHistoryEntry = history.state?.lumeArchive;
+  hideArchiveDialog();
+  if (hasHistoryEntry) history.back();
+};
+$("#archiveDownload").onclick = triggerArchiveDownload;
+$("#archiveCancel").onclick = async () => {
+  if (!archiveTask?.id) return;
+  try {
+    archiveTask = await api(
+      "/api/folder-download/cancel?id=" + encodeURIComponent(archiveTask.id),
+      { method: "POST" },
+    );
+    updateArchiveDialog(archiveTask);
+    clearTimeout(archivePoll);
+  } catch (error) {
+    showArchiveError(error.message);
+  }
+};
 async function previewFile(x) {
   if (x.isDir) return;
+  const ext = name(x).split(".").pop().toLowerCase();
+  if (ext === "dwg")
+    return toast("DWG 在线预览已移除，请下载后使用 CAD 软件打开");
   try {
-    const ext = name(x).split(".").pop().toLowerCase();
-    if (ext === "dwg") toast("正在请求主机生成 CAD 预览…");
     const officeFormats = [
       "doc",
       "docx",
@@ -319,23 +548,18 @@ async function previewFile(x) {
       "ods",
       "odp",
     ];
-    const endpoint =
-        ext === "dwg"
-          ? "/api/cad-preview"
-          : officeFormats.includes(ext)
-            ? "/api/office-preview"
-            : "/api/preview",
+    const endpoint = officeFormats.includes(ext)
+          ? "/api/office-preview"
+          : "/api/preview",
       r = await api(endpoint + "?path=" + encodeURIComponent(x.path)),
       blob = await r.blob(),
       u = URL.createObjectURL(blob),
       body = $("#previewBody");
+    setPreviewURL(u);
     $("#previewName").textContent = name(x);
     if (officeFormats.includes(ext))
       body.innerHTML = `<iframe src="${u}"></iframe>`;
-    else if (ext === "dwg") {
-      body.innerHTML = `<div class="cadTools"><button data-cad="out">−</button><span id="cadZoom">100%</span><button data-cad="in">＋</button><button data-cad="fit">适应窗口</button><button data-cad="full">全屏</button></div><div class="cadViewport"><img src="${u}" draggable="false"></div>`;
-      setupCAD(body);
-    } else if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext))
+    else if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext))
       body.innerHTML = `<img src="${u}">`;
     else if (["mp4", "webm"].includes(ext))
       body.innerHTML = `<video src="${u}" controls autoplay></video>`;
@@ -343,95 +567,139 @@ async function previewFile(x) {
       body.innerHTML = `<audio src="${u}" controls autoplay></audio>`;
     else if (ext === "pdf") body.innerHTML = `<iframe src="${u}"></iframe>`;
     else body.innerHTML = `<pre>${esc(await blob.text())}</pre>`;
+    history.pushState(navigationState({ lumePreview: true }), "");
     $("#preview").classList.remove("hidden");
   } catch (x) {
     toast(x.message);
   }
 }
-function setupCAD(body) {
-  const vp = body.querySelector(".cadViewport"),
-    img = vp.querySelector("img"),
-    label = body.querySelector("#cadZoom");
-  let scale = 1,
-    x = 0,
-    y = 0,
-    drag = false,
-    sx = 0,
-    sy = 0,
-    lastDist = 0;
-  const draw = () => {
-      img.style.transform = `translate(${x}px,${y}px) scale(${scale})`;
-      label.textContent = Math.round(scale * 100) + "%";
-    },
-    zoom = (factor, cx = vp.clientWidth / 2, cy = vp.clientHeight / 2) => {
-      const ns = Math.min(12, Math.max(0.15, scale * factor));
-      x = cx - (cx - x) * (ns / scale);
-      y = cy - (cy - y) * (ns / scale);
-      scale = ns;
-      draw();
-    };
-  vp.onwheel = (e) => {
-    e.preventDefault();
-    const r = vp.getBoundingClientRect();
-    zoom(e.deltaY < 0 ? 1.15 : 0.87, e.clientX - r.left, e.clientY - r.top);
-  };
-  vp.onpointerdown = (e) => {
-    drag = true;
-    sx = e.clientX - x;
-    sy = e.clientY - y;
-    vp.setPointerCapture(e.pointerId);
-  };
-  vp.onpointermove = (e) => {
-    if (drag) {
-      x = e.clientX - sx;
-      y = e.clientY - sy;
-      draw();
-    }
-  };
-  vp.onpointerup = () => (drag = false);
-  vp.ontouchmove = (e) => {
-    if (e.touches.length === 2) {
-      e.preventDefault();
-      const d = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY,
-      );
-      if (lastDist) zoom(d / lastDist);
-      lastDist = d;
-    }
-  };
-  vp.ontouchend = () => (lastDist = 0);
-  body.querySelectorAll("[data-cad]").forEach(
-    (b) =>
-      (b.onclick = () => {
-        const a = b.dataset.cad;
-        if (a === "in") zoom(1.25);
-        if (a === "out") zoom(0.8);
-        if (a === "fit") {
-          scale = 1;
-          x = 0;
-          y = 0;
-          draw();
+
+function setPreviewURL(url) {
+  if (activePreviewURL) URL.revokeObjectURL(activePreviewURL);
+  activePreviewURL = url;
+}
+
+function hidePreview() {
+  setPreviewURL("");
+  $("#preview").classList.add("hidden");
+}
+$("#closePreview").onclick = () => {
+  const hasHistoryEntry = history.state?.lumePreview;
+  hidePreview();
+  if (hasHistoryEntry) history.back();
+};
+async function download(p) {
+  fileDownloadAbort?.abort();
+  const controller = new AbortController(),
+    filename = p.split(/[\\/]/).pop() || "下载文件";
+  fileDownloadAbort = controller;
+  showFileDownloadDialog(filename);
+  const startedAt = performance.now();
+  try {
+    const response = await fetch("/api/download?path=" + encodeURIComponent(p), {
+      headers: { Authorization: "Bearer " + token },
+      signal: controller.signal,
+    });
+    if (!response.ok) throw Error((await response.text()) || "下载失败");
+    const total = Number(response.headers.get("content-length")) || 0,
+      contentType =
+        response.headers.get("content-type") || "application/octet-stream",
+      chunks = [];
+    let transferred = 0,
+      lastPaint = 0;
+    if (response.body?.getReader) {
+      const reader = response.body.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        transferred += value.byteLength;
+        const now = performance.now();
+        if (now - lastPaint > 120) {
+          updateFileDownloadProgress(transferred, total, now - startedAt);
+          lastPaint = now;
         }
-        if (a === "full") body.closest(".preview").requestFullscreen?.();
-      }),
-  );
-  draw();
+      }
+    } else {
+      const blob = await response.blob();
+      chunks.push(blob);
+      transferred = blob.size;
+    }
+    updateFileDownloadProgress(transferred, total || transferred, performance.now() - startedAt);
+    const objectURL = URL.createObjectURL(new Blob(chunks, { type: contentType })),
+      anchor = document.createElement("a");
+    anchor.href = objectURL;
+    anchor.download = filename;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(objectURL), 60000);
+    showFileDownloadResult("下载完成", "文件已交给浏览器保存", "complete");
+    toast("文件下载完成");
+  } catch (error) {
+    if (fileDownloadAbort !== controller) return;
+    if (error.name === "AbortError") {
+      showFileDownloadResult("下载已取消", "已停止接收文件", "cancelled");
+    } else {
+      showFileDownloadResult("下载失败", error.message || "请稍后重试", "error");
+      toast("下载失败");
+    }
+  } finally {
+    if (fileDownloadAbort === controller) fileDownloadAbort = null;
+  }
 }
-$("#closePreview").onclick = () => $("#preview").classList.add("hidden");
-function download(p) {
-  fetch("/api/download?path=" + encodeURIComponent(p), {
-    headers: { Authorization: "Bearer " + token },
-  }).then(async (r) => {
-    if (!r.ok) return toast("下载失败");
-    const b = await r.blob(),
-      a = document.createElement("a");
-    a.href = URL.createObjectURL(b);
-    a.download = p.split("/").pop();
-    a.click();
-    URL.revokeObjectURL(a.href);
-  });
+function showFileDownloadDialog(filename) {
+  $("#downloadTitle").textContent = filename;
+  $("#downloadState").textContent = "准备下载…";
+  $("#downloadMessage").textContent = "正在连接文件";
+  $("#downloadTransferred").textContent = "0 B";
+  $("#downloadTotal").textContent = "大小未知";
+  $("#downloadSpeed").textContent = "0 B/s";
+  $("#downloadBar").style.width = "0%";
+  $("#downloadBar").classList.remove("failed");
+  $("#downloadBar").classList.add("indeterminate");
+  $("#downloadCancel").classList.remove("hidden");
+  $("#downloadDone").classList.add("hidden");
+  $("#downloadDialog").classList.remove("hidden");
+  if (!history.state?.lumeDownload)
+    history.pushState(navigationState({ lumeDownload: true }), "");
 }
+function updateFileDownloadProgress(transferred, total, elapsedMilliseconds) {
+  const percent = total
+    ? Math.max(0, Math.min(100, Math.round((transferred / total) * 100)))
+    : 0;
+  $("#downloadState").textContent = total ? `正在下载 ${percent}%` : "正在下载";
+  $("#downloadMessage").textContent = "正在安全传输文件，请保持页面打开";
+  $("#downloadTransferred").textContent = `已下载 ${size(transferred)}`;
+  $("#downloadTotal").textContent = total ? `共 ${size(total)}` : "大小未知";
+  $("#downloadSpeed").textContent = `${size(
+    Math.round(
+      elapsedMilliseconds > 0 ? (transferred * 1000) / elapsedMilliseconds : 0,
+    ),
+  )}/s`;
+  $("#downloadBar").classList.toggle("indeterminate", !total);
+  $("#downloadBar").style.width = percent + "%";
+}
+function showFileDownloadResult(title, message, result) {
+  $("#downloadState").textContent = title;
+  $("#downloadMessage").textContent = message;
+  $("#downloadBar").classList.remove("indeterminate");
+  $("#downloadBar").classList.toggle("failed", result === "error");
+  if (result === "complete") $("#downloadBar").style.width = "100%";
+  $("#downloadCancel").classList.add("hidden");
+  $("#downloadDone").classList.remove("hidden");
+}
+function hideFileDownloadDialog() {
+  $("#downloadDialog").classList.add("hidden");
+}
+function closeFileDownloadDialog() {
+  const hasHistoryEntry = history.state?.lumeDownload;
+  hideFileDownloadDialog();
+  if (hasHistoryEntry) history.back();
+}
+$("#downloadClose").onclick = closeFileDownloadDialog;
+$("#downloadDone").onclick = closeFileDownloadDialog;
+$("#downloadCancel").onclick = () => fileDownloadAbort?.abort();
 async function json(url, data) {
   try {
     return await api(url, {

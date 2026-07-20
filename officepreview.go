@@ -19,7 +19,11 @@ var officeConvertMu sync.Mutex
 var officeExt = map[string]bool{".doc": true, ".docx": true, ".xls": true, ".xlsx": true, ".ppt": true, ".pptx": true, ".odt": true, ".ods": true, ".odp": true}
 
 func findSoffice() string {
-	c := []string{filepath.Join(os.Getenv("ProgramFiles"), "LibreOffice", "program", "soffice.exe"), filepath.Join(os.Getenv("ProgramFiles(x86)"), "LibreOffice", "program", "soffice.exe")}
+	c := []string{
+		filepath.Join(os.Getenv("ProgramFiles"), "LibreOffice", "program", "soffice.exe"),
+		filepath.Join(os.Getenv("ProgramFiles(x86)"), "LibreOffice", "program", "soffice.exe"),
+		`D:\Programs\LibreOffice\program\soffice.exe`,
+	}
 	if p, e := exec.LookPath("soffice"); e == nil {
 		c = append([]string{p}, c...)
 	}
@@ -32,6 +36,11 @@ func findSoffice() string {
 	}
 	return ""
 }
+
+func officeCacheDir() string {
+	return filepath.Join(cacheRootDir(), "office")
+}
+
 func officeStatus() string {
 	if findSoffice() != "" {
 		return "ready"
@@ -59,7 +68,7 @@ func (s *Server) officePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := sha256.Sum256([]byte(p + fmt.Sprint(info.Size(), info.ModTime().UnixNano())))
-	cache := filepath.Join(lumeDataDir(), "cache", "office")
+	cache := officeCacheDir()
 	_ = os.MkdirAll(cache, 0700)
 	out := filepath.Join(cache, hex.EncodeToString(key[:])+".pdf")
 	if _, e = os.Stat(out); e != nil {

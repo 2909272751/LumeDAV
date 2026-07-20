@@ -1,0 +1,130 @@
+.adminStats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-top: 16px;
+}
+.adminStats article {
+  min-height: 92px;
+}
+.adminStats small,
+.adminStats b {
+  display: block;
+}
+.adminStats small {
+  font-size: 12px;
+  color: #7783a3;
+}
+.adminStats b {
+  font-size: 25px;
+  margin-top: 12px;
+}
+.addressCard {
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px solid #ffffff10;
+  background: #0c1226;
+  border-radius: 16px;
+}
+.addressCard > b {
+  display: block;
+  margin-bottom: 10px;
+}
+.addressCard button {
+  display: block;
+  border: 0;
+  background: #ffffff08;
+  color: #9eaae0;
+  padding: 9px 12px;
+  border-radius: 8px;
+  margin-top: 6px;
+}
+.checkPort {
+  margin-top: 11px;
+  border: 1px solid #6558e8;
+  background: #6558e822;
+  color: #bcb5ff;
+  border-radius: 9px;
+  padding: 8px 12px;
+}
+.securityCards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 28px 0 14px;
+}
+.securityCards article b,
+.securityCards article span {
+  display: block;
+}
+.securityCards article b {
+  font-size: 24px;
+}
+.securityCards article span {
+  font-size: 12px;
+  color: #74809f;
+  margin-top: 8px;
+}
+.trashAdmin {
+  margin-top: 28px;
+}
+.trashHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.trashHead h3 {
+  font-size: 18px;
+  margin: 0;
+}
+.trashHead p {
+  font-size: 12px;
+  color: #74809f;
+}
+.trashHead button {
+  border: 1px solid #fb718555;
+  background: #fb718511;
+  color: #fb7185;
+  border-radius: 9px;
+  padding: 8px 12px;
+}
+.trashRow {
+  display: grid;
+  grid-template-columns: 30px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid #ffffff0c;
+  padding: 13px 5px;
+}
+.trashRow b,
+.trashRow small {
+  display: block;
+}
+.trashRow small {
+  font-size: 12px;
+  color: #74809f;
+  margin-top: 4px;
+}
+.trashRow button {
+  border: 0;
+  background: #6558e822;
+  color: #a9a2ff;
+  padding: 7px 12px;
+  border-radius: 8px;
+}
+.emptyAdmin {
+  text-align: center;
+  color: #6f7b99;
+  padding: 80px;
+}
+.temporary {
+  margin-top: 14px;
+}
+.adminColumns{display:grid;grid-template-columns:1fr 1fr;gap:14px}.userCreate{display:grid;grid-template-columns:1fr 1fr auto;gap:8px}.userCreate button,.inviteCreate button{grid-column:1/-1;border:0;background:#6558e8;color:white;border-radius:9px;padding:9px}.userList,.inviteList{margin-top:14px}.userList>div,.inviteList>div{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:7px;border-top:1px solid #ffffff0c;padding:11px 0}.userList b,.userList small,.inviteList b,.inviteList small{display:block}.userList small,.inviteList small{font-size:12px;color:#74809f;margin-top:3px}.userList button,.inviteList button{border:0;background:#6558e822;color:#aaa3ff;border-radius:7px;padding:6px 9px}.userList .remove,.inviteList .remove{color:#fb7185;background:#fb718511}.inviteCreate label{font-size:12px;color:#74809f}.inviteCreate input{margin-bottom:8px}
+@media (max-width: 1000px) {
+  .adminStats,
+  .securityCards {
+    grid-template-columns: 1fr 1fr;
+  }
+  .adminColumns{grid-template-columns:1fr}
+}

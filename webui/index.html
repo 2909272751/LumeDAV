@@ -6,113 +6,123 @@
       name="viewport"
       content="width=device-width,initial-scale=1,viewport-fit=cover"
     />
-    <meta name="theme-color" content="#080c19" />
+    <meta name="theme-color" content="#f5f7fb" />
     <title>LumeDAV</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <div id="register" class="login hidden">
-      <div class="glow"></div>
+    <div id="login" class="auth">
+      <form id="loginForm">
+        <img src="/lumedav-logo.png" />
+        <h1>欢迎使用 LumeDAV</h1>
+        <p>登录你的私人文件空间</p>
+        <label
+          >用户名<input
+            id="user"
+            value="admin"
+            autocomplete="username" /></label
+        ><label
+          >密码<input
+            id="pass"
+            type="password"
+            autocomplete="current-password" /></label
+        ><button>登录</button><em id="loginError"></em>
+      </form>
+    </div>
+    <div id="register" class="auth hidden">
       <form id="registerForm">
-        <img class="logo" src="/lumedav-logo.png" /><small
-          >INVITED REGISTRATION</small
-        >
+        <img src="/lumedav-logo.png" />
         <h1>创建访问账号</h1>
-        <p>使用管理员发出的邀请加入 LumeDAV</p>
+        <p>使用管理员发出的邀请加入文件空间</p>
         <label>用户名<input id="regUser" autocomplete="username" /></label
         ><label
           >密码<input
             id="regPass"
             type="password"
             autocomplete="new-password" /></label
-        ><button>完成注册 <b>→</b></button><em id="regError"></em
-        ><span>ONE-TIME SECURE INVITATION</span>
+        ><button>完成注册</button><em id="regError"></em>
       </form>
     </div>
-    <div id="login" class="login">
-      <div class="glow"></div>
-      <form id="loginForm">
-        <img class="logo" src="/lumedav-logo.png" alt="LumeDAV" /><small
-          >WELCOME TO</small
-        >
-        <h1>LumeDAV</h1>
-        <p>登录你的私人文件空间</p>
-        <label
-          >用户名<input
-            id="user"
-            autocomplete="username"
-            value="admin" /></label
-        ><label
-          >密码<input
-            id="pass"
-            type="password"
-            autocomplete="current-password" /></label
-        ><button>进入空间 <b>→</b></button><em id="loginError"></em
-        ><span>SECURE · PRIVATE · LIGHTWEIGHT</span>
-      </form>
-    </div>
-    <div id="app" class="app hidden">
-      <aside>
-        <div class="brand">
-          <img class="logo" src="/lumedav-logo.png" alt="" /><b>LumeDAV</b>
+    <div id="app" class="shell hidden">
+      <header class="topbar">
+        <button id="menuToggle" class="iconBtn">☰</button>
+        <div class="wordmark">
+          <img src="/lumedav-logo.png" /><b>LumeDAV</b>
         </div>
+        <div class="topSearch">
+          <span>⌕</span><input id="search" placeholder="搜索文件和文件夹" />
+        </div>
+        <div class="userDot">●</div>
+      </header>
+      <aside id="sidebar">
+        <div class="sideTitle">文件空间</div>
         <nav>
           <button class="active" data-view="files">
-            ◈<span>所有文件</span></button
-          ><button data-view="trash">♲<span>回收站</span></button
-          ><button id="davBtn">◇<span>连接 WebDAV</span></button>
+            <span>▦</span>我的文件</button
+          ><button data-view="trash"><span>♲</span>回收站</button>
         </nav>
-        <div class="quota">
-          <small>PRIVATE SPACE</small>
-          <p>文件只保留在你的设备中</p>
+        <div class="treeTitle">
+          <b>目录树</b><button id="treeRefresh">↻</button>
+        </div>
+        <div id="tree" class="tree"></div>
+        <div class="sideFoot">
+          <span>标准 WebDAV</span><button id="davBtn">复制连接地址</button>
         </div>
       </aside>
-      <main>
-        <header>
+      <main class="workspace">
+        <div class="pageHead">
           <div>
-            <small>MY SPACE</small>
-            <h1 id="pageTitle">所有文件</h1>
+            <div id="crumbs" class="crumbs"></div>
+            <h1 id="pageTitle">我的文件</h1>
           </div>
-          <div class="actions">
+          <div class="headActions">
             <label class="upload"
-              ><input id="upload" type="file" multiple />＋ 上传文件</label
+              ><input id="upload" type="file" multiple />＋ 上传</label
             ><button id="newFolder">新建文件夹</button>
           </div>
-        </header>
-        <section class="stats">
-          <div><small>在线会话</small><b id="sOnline">0</b></div>
-          <div><small>运行时间</small><b id="sUptime">—</b></div>
-          <div><small>请求次数</small><b id="sRequests">0</b></div>
-          <div><small>传输流量</small><b id="sTraffic">0 B</b></div>
-        </section>
-        <div class="toolbar">
-          <div id="crumbs" class="crumbs"></div>
-          <input id="search" placeholder="搜索文件…" /><select id="sort">
-            <option value="name">按名称</option>
-            <option value="time">按时间</option>
-            <option value="size">按大小</option>
-          </select>
         </div>
-        <section class="panel">
-          <div class="tableHead">
-            <span>名称</span><span>大小</span><span>修改时间</span><span></span>
+        <div class="toolbar">
+          <div>
+            <button id="refreshBtn">↻ 刷新</button
+            ><button id="selectBtn">□ 选择</button>
+          </div>
+          <div>
+            <select id="sort">
+              <option value="name">名称排序</option>
+              <option value="time">修改时间</option>
+              <option value="size">文件大小</option>
+            </select>
+            <div class="viewSwitch">
+              <button id="gridView" class="active">▦</button
+              ><button id="listView">☷</button>
+            </div>
+          </div>
+        </div>
+        <section id="filePanel" class="filePanel gridMode">
+          <div class="listHeader">
+            <span>名称</span><span>大小</span><span>类型</span
+            ><span>修改时间</span><span></span>
           </div>
           <div id="files" class="files"></div>
           <div id="empty" class="empty hidden">
-            <div>◇</div>
-            <h2>这里很安静</h2>
-            <p>上传文件，或创建第一个文件夹</p>
+            <div>▱</div>
+            <h2>这里还没有文件</h2>
+            <p>上传文件或新建一个文件夹</p>
           </div>
         </section>
+        <footer>
+          <span id="itemCount">0 个项目</span
+          ><span>安全地存储在你的设备中</span>
+        </footer>
       </main>
       <div id="toast" class="toast"></div>
     </div>
-    <div id="menu" class="menu hidden">
+    <div id="menu" class="context hidden">
       <button data-act="preview">预览</button
       ><button data-act="download">下载</button
       ><button data-act="rename">重命名</button
       ><button data-act="restore">恢复</button
-      ><button data-act="delete" class="red">移入回收站</button>
+      ><button data-act="delete" class="danger">移入回收站</button>
     </div>
     <div id="preview" class="preview hidden">
       <div>

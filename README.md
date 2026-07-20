@@ -16,6 +16,8 @@ LumeDAV 是一款轻量、现代的 Windows WebDAV 服务端。它使用 Go + Wa
 - 回收站、文件恢复和清空管理
 - 运行仪表盘、在线会话和流量统计
 - 图片、视频、音频、PDF、文本与代码预览
+- DWG 本地转 SVG 预览，支持缩放、平移、适应窗口和全屏
+- Word、Excel、PowerPoint 通过本机 LibreOffice 转 PDF 预览
 - 跨共享目录搜索及名称、时间、大小排序
 - 适合配合 88FRP 等端口映射工具使用
 
@@ -30,6 +32,11 @@ LumeDAV 是一款轻量、现代的 Windows WebDAV 服务端。它使用 Go + Wa
 LumeDAV 默认监听 `127.0.0.1:8088`，不会检测、启动或修改 88FRP。需要局域网直连时，可在 EXE 中切换为“局域网与本机”。
 
 > 公网 HTTP 会明文传输 WebDAV Basic Auth。通过公网使用时，请在反向代理或穿透服务侧启用 HTTPS。
+
+### 可选预览引擎
+
+- CAD：管理员可在 EXE 的“CAD 预览”页面下载并安装 LibreDWG 0.14。Web 用户不会触发下载，DWG 始终在主机本地转换。
+- Office：主机安装 LibreOffice 后自动支持 DOC/DOCX、XLS/XLSX、PPT/PPTX 和 OpenDocument 格式。本机转换结果会缓存为 PDF。
 
 ## 从源码构建
 

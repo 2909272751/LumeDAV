@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import {
   CheckPort,
+  CADPreviewStatus,
+  ClearCADPreviewCache,
+  ClearOfficePreviewCache,
   CreateInvite,
   CreateTemporaryAccess,
   CreateUser,
@@ -9,6 +12,9 @@ import {
   GetDashboard,
   GetSettings,
   GetStatus,
+  InstallCADPreviewEngine,
+  OfficePreviewStatus,
+  OpenLibreOfficeDownload,
   ListTemporaryAccess,
   ListTrash,
   ListInvites,
@@ -25,6 +31,7 @@ import {
 } from "../wailsjs/go/main/App";
 import "./App.css";
 import "./admin.css";
+import "./engine.css";
 type Settings = {
   folder: string;
   folders: string[];
@@ -76,6 +83,8 @@ export default function App() {
       readOnly: true,
     }),
     [inviteHours, setInviteHours] = useState(24),
+    [cadStatus, setCadStatus] = useState("missing"),
+    [officeStatus, setOfficeStatus] = useState("missing"),
     [temp, setTemp] = useState({
       folder: "",
       username: "",
@@ -90,6 +99,8 @@ export default function App() {
     setTemps(await ListTemporaryAccess());
     setUsers((await ListUsers()) || []);
     setInvites((await ListInvites()) || []);
+    setCadStatus(await CADPreviewStatus());
+    setOfficeStatus(await OfficePreviewStatus());
   };
   useEffect(() => {
     GetSettings().then((x) => {
@@ -130,6 +141,8 @@ export default function App() {
     ["settings", "⚙", "服务设置"],
     ["security", "◇", "安全与临时访问"],
     ["admin", "♙", "用户与邀请"],
+    ["cad", "⌑", "CAD 预览"],
+    ["office", "▤", "Office 预览"],
     ["trash", "♲", "回收站"],
   ];
   return (
@@ -630,6 +643,140 @@ export default function App() {
               </article>
             </div>
           </>
+        )}
+        {page === "cad" && (
+          <div className="cadAdmin">
+            <article>
+              <Title
+                n="DWG"
+                h="本地 CAD 预览引擎"
+                p="DWG 在这台 Windows 主机转换为 SVG，其他设备无需安装组件"
+              />
+              <div className={"engineState " + cadStatus}>
+                <i />
+                <div>
+                  <b>
+                    {cadStatus === "ready" ? "引擎已就绪" : "尚未安装预览引擎"}
+                  </b>
+                  <span>
+                    {cadStatus === "ready"
+                      ? "LibreDWG 0.14 · 本地转换 · 不上传图纸"
+                      : "请管理员在此页面主动下载安装，约 12 MB；Web 用户不会触发下载"}
+                  </span>
+                </div>
+              </div>
+              <div className="cadActions">
+                <button
+                  className="primary"
+                  disabled={busy || cadStatus === "ready"}
+                  onClick={async () => {
+                    setBusy(true);
+                    setMsg("正在从官方源下载并校验 CAD 引擎…");
+                    const r = await InstallCADPreviewEngine();
+                    setBusy(false);
+                    setCadStatus(await CADPreviewStatus());
+                    setMsg(r === "ready" ? "CAD 预览引擎安装完成" : r);
+                  }}
+                >
+                  {cadStatus === "ready" ? "已经安装" : "下载并安装"}
+                </button>
+                <button
+                  onClick={async () => {
+                    await ClearCADPreviewCache();
+                    setMsg("CAD 预览缓存已清空");
+                  }}
+                >
+                  清空预览缓存
+                </button>
+              </div>
+              <div className="cadInfo">
+                <div>
+                  <b>支持设备</b>
+                  <span>Windows、macOS、iPhone、iPad、安卓浏览器</span>
+                </div>
+                <div>
+                  <b>查看能力</b>
+                  <span>滚轮/双指缩放、拖动平移、适应窗口、全屏</span>
+                </div>
+                <div>
+                  <b>缓存策略</b>
+                  <span>图纸路径、大小或修改时间变化后自动重新生成</span>
+                </div>
+                <div>
+                  <b>适用范围</b>
+                  <span>二维 DWG 粗略看图；复杂代理对象可能显示不完整</span>
+                </div>
+              </div>
+            </article>
+          </div>
+        )}
+        {page === "office" && (
+          <div className="cadAdmin">
+            <article>
+              <Title
+                n="DOC"
+                h="Office 文档预览引擎"
+                p="Word、Excel、PowerPoint 在主机本地转换为 PDF，访问设备无需安装 Office"
+              />
+              <div className={"engineState " + officeStatus}>
+                <i />
+                <div>
+                  <b>
+                    {officeStatus === "ready"
+                      ? "LibreOffice 已就绪"
+                      : "尚未检测到 LibreOffice"}
+                  </b>
+                  <span>
+                    {officeStatus === "ready"
+                      ? "支持 DOC/DOCX、XLS/XLSX、PPT/PPTX、ODT/ODS/ODP"
+                      : "LibreOffice 体积较大，需要管理员在 Windows 主机安装一次"}
+                  </span>
+                </div>
+              </div>
+              <div className="cadActions">
+                <button
+                  className="primary"
+                  disabled={officeStatus === "ready"}
+                  onClick={() => OpenLibreOfficeDownload()}
+                >
+                  {officeStatus === "ready" ? "已经安装" : "打开官方下载页"}
+                </button>
+                <button
+                  onClick={async () => {
+                    await ClearOfficePreviewCache();
+                    setMsg("Office 预览缓存已清空");
+                  }}
+                >
+                  清空预览缓存
+                </button>
+                <button
+                  onClick={async () =>
+                    setOfficeStatus(await OfficePreviewStatus())
+                  }
+                >
+                  重新检测
+                </button>
+              </div>
+              <div className="cadInfo">
+                <div>
+                  <b>Word</b>
+                  <span>DOC、DOCX、ODT 转换为 PDF</span>
+                </div>
+                <div>
+                  <b>Excel</b>
+                  <span>XLS、XLSX、ODS，多工作表按 PDF 页面查看</span>
+                </div>
+                <div>
+                  <b>PowerPoint</b>
+                  <span>PPT、PPTX、ODP，按幻灯片页面查看</span>
+                </div>
+                <div>
+                  <b>其他格式</b>
+                  <span>图片、视频、音频、PDF、文本无需额外引擎</span>
+                </div>
+              </div>
+            </article>
+          </div>
         )}
         {page === "trash" && (
           <article className="trashAdmin">

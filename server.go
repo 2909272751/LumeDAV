@@ -77,6 +77,8 @@ func (s *Server) Start() error {
 	mux.Handle("/api/stats", s.tokenAuth(http.HandlerFunc(s.stats)))
 	mux.Handle("/api/search", s.tokenAuth(http.HandlerFunc(s.search)))
 	mux.Handle("/api/preview", s.tokenAuth(http.HandlerFunc(s.preview)))
+	mux.Handle("/api/cad-preview", s.tokenAuth(http.HandlerFunc(s.cadPreview)))
+	mux.Handle("/api/office-preview", s.tokenAuth(http.HandlerFunc(s.officePreview)))
 	mux.Handle("/api/trash", s.tokenAuth(http.HandlerFunc(s.trash)))
 	mux.Handle("/api/trash/restore", s.tokenAuth(http.HandlerFunc(s.restoreTrash)))
 	mux.Handle("/api/trash/empty", s.tokenAuth(http.HandlerFunc(s.emptyTrash)))

@@ -34,6 +34,7 @@ type folderArchiveTask struct {
 	Mode           string
 	Status         string
 	FilePath       string
+	CacheDir       string
 	Error          string
 	TotalBytes     int64
 	ProcessedBytes int64
@@ -198,6 +199,7 @@ func (s *Server) folderArchiveStart(w http.ResponseWriter, r *http.Request) {
 		Name:      cleanArchiveName(name),
 		Key:       randomID(24),
 		Status:    "queued",
+		CacheDir:  s.archiveDirectory(),
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 		ctx:       ctx,
@@ -246,7 +248,7 @@ func (s *Server) folderArchiveCancel(w http.ResponseWriter, r *http.Request) {
 	if filePath != "" {
 		_ = os.Remove(filePath)
 	}
-	_ = os.Remove(filepath.Join(archiveCacheDir(), task.ID+".zip.part"))
+	_ = os.Remove(filepath.Join(taskCacheDir(task), task.ID+".zip.part"))
 	writeJSON(w, task.view())
 }
 
@@ -363,12 +365,13 @@ func (s *Server) ownedArchiveTask(r *http.Request, id string) (*folderArchiveTas
 }
 
 func bearerToken(r *http.Request) string {
-	return strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	return sessionToken(r)
 }
 
 func (s *Server) archiveWorker() {
-	_ = os.MkdirAll(archiveCacheDir(), 0700)
-	removeStaleArchiveFiles(24 * time.Hour)
+	cacheDir := s.archiveDirectory()
+	_ = os.MkdirAll(cacheDir, 0700)
+	removeStaleArchiveFiles(cacheDir, 24*time.Hour)
 	for {
 		select {
 		case task := <-s.archiveQueue:
@@ -407,12 +410,17 @@ func (s *Server) prepareFolderArchive(task *folderArchiveTask) {
 	task.UpdatedAt = time.Now()
 	task.mu.Unlock()
 
-	if err = os.MkdirAll(archiveCacheDir(), 0700); err != nil {
+	cacheDir := taskCacheDir(task)
+	if err = ensureArchiveDiskSpace(cacheDir, bytes); err != nil {
 		task.fail(err)
 		return
 	}
-	part := filepath.Join(archiveCacheDir(), task.ID+".zip.part")
-	final := filepath.Join(archiveCacheDir(), task.ID+".zip")
+	if err = os.MkdirAll(cacheDir, 0700); err != nil {
+		task.fail(err)
+		return
+	}
+	part := filepath.Join(cacheDir, task.ID+".zip.part")
+	final := filepath.Join(cacheDir, task.ID+".zip")
 	file, err := os.OpenFile(part, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	if err == nil {
 		err = writeFolderZip(task.ctx, task, file)
@@ -447,7 +455,7 @@ func scanFolderArchive(ctx context.Context, task *folderArchiveTask) (int, int64
 		if walkErr != nil {
 			return walkErr
 		}
-		if path != task.Source && skipArchivePath(path, entry) {
+		if path != task.Source && skipArchivePath(path, entry, cacheRootDir(), taskCacheDir(task), officeCacheDir()) {
 			task.skip()
 			if entry.IsDir() {
 				return filepath.SkipDir
@@ -487,7 +495,7 @@ func writeFolderZip(ctx context.Context, task *folderArchiveTask, output io.Writ
 		if walkErr != nil {
 			return walkErr
 		}
-		if path != task.Source && skipArchivePath(path, entry) {
+		if path != task.Source && skipArchivePath(path, entry, cacheRootDir(), taskCacheDir(task), officeCacheDir()) {
 			if entry.IsDir() {
 				return filepath.SkipDir
 			}
@@ -568,23 +576,41 @@ func archiveCompressionMethod(name string) uint16 {
 	}
 }
 
-func skipArchivePath(path string, entry fs.DirEntry) bool {
+func skipArchivePath(path string, entry fs.DirEntry, cacheDirs ...string) bool {
 	if strings.EqualFold(entry.Name(), ".lumedav-trash") {
 		return true
 	}
 	if entry.Type()&os.ModeSymlink != 0 {
 		return true
 	}
-	cache, err := filepath.Abs(cacheRootDir())
-	if err != nil {
-		return false
+	if len(cacheDirs) == 0 {
+		cacheDirs = []string{cacheRootDir()}
 	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return false
 	}
-	relative, err := filepath.Rel(cache, absolute)
-	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)
+	for _, directory := range cacheDirs {
+		if strings.TrimSpace(directory) == "" {
+			continue
+		}
+		cache, err := filepath.Abs(directory)
+		if err != nil {
+			continue
+		}
+		relative, err := filepath.Rel(cache, absolute)
+		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative) {
+			return true
+		}
+	}
+	return false
+}
+
+func taskCacheDir(task *folderArchiveTask) string {
+	if strings.TrimSpace(task.CacheDir) != "" {
+		return task.CacheDir
+	}
+	return archiveCacheDir()
 }
 
 func cleanArchiveName(name string) string {
@@ -624,10 +650,10 @@ func (s *Server) archiveCleanupLoop() {
 				if filePath != "" {
 					_ = os.Remove(filePath)
 				}
-				_ = os.Remove(filepath.Join(archiveCacheDir(), task.ID+".zip.part"))
+				_ = os.Remove(filepath.Join(taskCacheDir(task), task.ID+".zip.part"))
 			}
 			if now.Sub(lastDiskCleanup) >= time.Hour {
-				removeStaleArchiveFiles(24 * time.Hour)
+				removeStaleArchiveFiles(s.archiveDirectory(), 24*time.Hour)
 				lastDiskCleanup = now
 			}
 		case <-s.archiveStop:
@@ -636,8 +662,8 @@ func (s *Server) archiveCleanupLoop() {
 	}
 }
 
-func removeStaleArchiveFiles(maxAge time.Duration) {
-	entries, err := os.ReadDir(archiveCacheDir())
+func removeStaleArchiveFiles(cacheDir string, maxAge time.Duration) {
+	entries, err := os.ReadDir(cacheDir)
 	if err != nil {
 		return
 	}
@@ -648,7 +674,7 @@ func removeStaleArchiveFiles(maxAge time.Duration) {
 		}
 		info, err := entry.Info()
 		if err == nil && info.ModTime().Before(cutoff) {
-			_ = os.Remove(filepath.Join(archiveCacheDir(), entry.Name()))
+			_ = os.Remove(filepath.Join(cacheDir, entry.Name()))
 		}
 	}
 }

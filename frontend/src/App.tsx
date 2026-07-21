@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CheckPort,
+  ClearArchiveCache,
   ClearOfficePreviewCache,
   CreateInvite,
   CreateTemporaryAccess,
@@ -8,10 +9,13 @@ import {
   DeleteUser,
   EmptyTrash,
   GetDashboard,
+  GetArchiveDrives,
   GetSettings,
   GetStatus,
   GetVersion,
+  InspectArchiveCache,
   OfficePreviewStatus,
+  OpenArchiveCacheFolder,
   OpenLibreOfficeDownload,
   ListTemporaryAccess,
   ListTrash,
@@ -21,6 +25,7 @@ import {
   RevokeTemporaryAccess,
   RevokeInvite,
   SaveSettings,
+  SelectArchiveCacheFolder,
   SelectFolder,
   SelectTemporaryFolder,
   Start,
@@ -40,6 +45,22 @@ type Settings = {
   passwordSet: boolean;
   readOnly: boolean;
   autoStart: boolean;
+  archiveCacheDir: string;
+};
+type ArchiveDriveInfo = { root: string; total: number; free: number };
+type ArchiveCacheInfo = {
+  path: string;
+  total: number;
+  free: number;
+  cacheBytes: number;
+  cacheFiles: number;
+  available: boolean;
+  error?: string;
+};
+type OperationNotice = {
+  state: "busy" | "success" | "error";
+  title: string;
+  detail: string;
 };
 type Status = {
   running: boolean;
@@ -57,6 +78,7 @@ const empty: Settings = {
   passwordSet: false,
   readOnly: false,
   autoStart: false,
+  archiveCacheDir: "",
 };
 export default function App() {
   const [cfg, setCfg] = useState(empty),
@@ -68,7 +90,9 @@ export default function App() {
     }),
     [page, setPage] = useState("dashboard"),
     [busy, setBusy] = useState(false),
+    [serviceBusy, setServiceBusy] = useState(false),
     [msg, setMsg] = useState(""),
+    [operation, setOperation] = useState<OperationNotice | null>(null),
     [portText, setPortText] = useState("8088"),
     [dash, setDash] = useState<any>({}),
     [trash, setTrash] = useState<any[]>([]),
@@ -83,13 +107,32 @@ export default function App() {
     [inviteHours, setInviteHours] = useState(24),
     [version, setVersion] = useState(""),
     [officeStatus, setOfficeStatus] = useState("missing"),
+    [archiveDrives, setArchiveDrives] = useState<ArchiveDriveInfo[]>([]),
+    [archiveInfo, setArchiveInfo] = useState<ArchiveCacheInfo | null>(null),
+    [savedArchivePath, setSavedArchivePath] = useState(""),
+    [cacheBusy, setCacheBusy] = useState(false),
     [temp, setTemp] = useState({
       folder: "",
       username: "",
       password: "",
       hours: 24,
       readOnly: true,
-    });
+    }),
+    operationTimer = useRef<number | undefined>(undefined);
+  function announce(
+    state: OperationNotice["state"],
+    title: string,
+    detail: string,
+    autoHide = state === "busy" ? 0 : 3200,
+  ) {
+    if (operationTimer.current) window.clearTimeout(operationTimer.current);
+    setOperation({ state, title, detail });
+    if (autoHide)
+      operationTimer.current = window.setTimeout(
+        () => setOperation(null),
+        autoHide,
+      );
+  }
   const refresh = async () => {
     setStatus((await GetStatus()) as Status);
     setDash(await GetDashboard());
@@ -101,42 +144,116 @@ export default function App() {
   };
   useEffect(() => {
     GetVersion().then(setVersion);
+    GetArchiveDrives().then((items) => setArchiveDrives(items || []));
     GetSettings().then((x) => {
       const v = x as Settings;
       v.folders = v.folders || (v.folder && [v.folder]) || [];
       setCfg(v);
       setPortText(String(v.port));
+      setSavedArchivePath(v.archiveCacheDir);
+      InspectArchiveCache(v.archiveCacheDir).then((info) =>
+        setArchiveInfo(info as ArchiveCacheInfo),
+      );
     });
     refresh();
     const t = setInterval(() => GetDashboard().then(setDash), 4000);
-    return () => clearInterval(t);
+    return () => {
+      clearInterval(t);
+      if (operationTimer.current) window.clearTimeout(operationTimer.current);
+    };
   }, []);
   const set = (k: keyof Settings, v: any) => setCfg({ ...cfg, [k]: v });
   async function save() {
     setBusy(true);
+    announce("busy", "正在保存设置", "正在验证共享目录、端口和压缩磁盘");
     try {
       const port = Number(portText);
       if (!Number.isInteger(port) || port < 1 || port > 65535)
         throw Error("端口必须是 1–65535 的整数");
       const x = await SaveSettings({ ...cfg, port } as any);
-      setCfg(x as Settings);
+      const next = x as Settings;
+      setCfg(next);
+      setSavedArchivePath(next.archiveCacheDir);
+      setArchiveInfo(
+        (await InspectArchiveCache(next.archiveCacheDir)) as ArchiveCacheInfo,
+      );
       setMsg("设置已保存");
+      announce("success", "设置已保存", "新的压缩与服务设置已经生效");
       return true;
     } catch (e: any) {
       setMsg(String(e));
+      announce("error", "保存失败", String(e), 5200);
       return false;
     } finally {
       setBusy(false);
     }
   }
   async function toggle() {
-    if (status.running) setStatus((await Stop()) as Status);
-    else if (await save()) setStatus((await Start()) as Status);
-    refresh();
+    if (serviceBusy) return;
+    setServiceBusy(true);
+    try {
+      if (status.running) {
+        announce("busy", "正在停止服务", "正在结束连接并释放监听端口");
+        const next = (await Stop()) as Status;
+        setStatus(next);
+        if (next.error) throw Error(next.error);
+        announce("success", "服务已停止", "端口已经释放，可安全修改配置");
+      } else if (await save()) {
+        announce("busy", "正在启动服务", `正在监听 localhost:${Number(portText)}`);
+        const next = (await Start()) as Status;
+        setStatus(next);
+        if (next.error) throw Error(next.error);
+        announce("success", "服务已启动", `现在可以访问 localhost:${Number(portText)}`);
+      }
+    } catch (e: any) {
+      setMsg(String(e));
+      announce("error", "服务操作失败", String(e), 5200);
+    } finally {
+      setServiceBusy(false);
+      await refresh();
+    }
   }
+  async function inspectCache(path: string, notify = false) {
+    setCacheBusy(true);
+    if (notify)
+      announce("busy", "正在检查压缩磁盘", "正在读取磁盘容量与临时文件占用");
+    try {
+      const info = (await InspectArchiveCache(path)) as ArchiveCacheInfo;
+      setArchiveInfo(info);
+      if (notify)
+        announce(
+          info.available ? "success" : "error",
+          info.available ? "磁盘检查完成" : "压缩磁盘不可用",
+          info.available
+            ? `${storageSize(info.free)} 可用，当前缓存 ${storageSize(info.cacheBytes)}`
+            : info.error || "请选择其他本地磁盘",
+          info.available ? 2600 : 5200,
+        );
+    } catch (e: any) {
+      if (notify) announce("error", "磁盘检查失败", String(e), 5200);
+    } finally {
+      setCacheBusy(false);
+    }
+  }
+  async function chooseArchiveCache() {
+    const selected = await SelectArchiveCacheFolder();
+    if (!selected) return;
+    set("archiveCacheDir", selected);
+    await inspectCache(selected, true);
+    setMsg("已选择新位置，保存设置后生效");
+  }
+  async function useArchiveDrive(root: string) {
+    const selected = `${root}LumeDAVCache\\downloads`;
+    set("archiveCacheDir", selected);
+    await inspectCache(selected, true);
+    setMsg("已选择新磁盘，保存设置后生效");
+  }
+  const cacheChanged =
+    cfg.archiveCacheDir.toLowerCase() !== savedArchivePath.toLowerCase();
   const nav = [
     ["dashboard", "◈", "仪表盘"],
     ["settings", "⚙", "服务设置"],
+    ["cache", "▣", "压缩与缓存"],
     ["security", "◇", "安全与临时访问"],
     ["admin", "♙", "用户与邀请"],
     ["office", "▤", "Office 预览"],
@@ -183,7 +300,10 @@ export default function App() {
                 {
                   dashboard: "运行仪表盘",
                   settings: "服务设置",
+                  cache: "压缩与缓存",
                   security: "安全与临时访问",
+                  admin: "用户与邀请",
+                  office: "Office 预览",
                   trash: "回收站",
                 }[page]
               }
@@ -195,6 +315,27 @@ export default function App() {
             {status.running ? "正在运行" : "已停止"}
           </div>
         </header>
+        {operation && (
+          <div
+            className={`adminOperation ${operation.state}`}
+            role="status"
+            aria-live="polite"
+          >
+            <i />
+            <div>
+              <b>{operation.title}</b>
+              <span>{operation.detail}</span>
+            </div>
+            {operation.state !== "busy" && (
+              <button
+                aria-label="关闭提示"
+                onClick={() => setOperation(null)}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        )}
         {page === "dashboard" && (
           <>
             <div className="hero">
@@ -214,9 +355,18 @@ export default function App() {
               </div>
               <button
                 className={status.running ? "danger" : "primary"}
+                disabled={serviceBusy}
                 onClick={toggle}
               >
-                {status.running ? "停止服务" : "启动服务"}　→
+                {serviceBusy && <i className="buttonSpinner" />}
+                {serviceBusy
+                  ? status.running
+                    ? "正在停止…"
+                    : "正在启动…"
+                  : status.running
+                    ? "停止服务"
+                    : "启动服务"}
+                {!serviceBusy && "　→"}
               </button>
             </div>
             <div className="adminStats">
@@ -353,6 +503,160 @@ export default function App() {
                 f={(v) => set("readOnly", v)}
               />
             </article>
+          </div>
+        )}
+        {page === "cache" && (
+          <div className="cacheAdmin">
+            <article className="cacheOverview">
+              <Title
+                n="ZIP"
+                h="文件夹压缩缓存"
+                p="大文件夹会先在所选磁盘生成临时 ZIP；小于 2 GB 的目录仍然直接流式传输"
+              />
+              <div
+                className={
+                  "cacheHealth " +
+                  (archiveInfo?.available ? "ready" : "unavailable")
+                }
+              >
+                <i />
+                <div>
+                  <b>
+                    {archiveInfo?.available
+                      ? "压缩磁盘可用"
+                      : "压缩磁盘不可用"}
+                  </b>
+                  <span>
+                    {archiveInfo?.available
+                      ? `${storageSize(archiveInfo.free)} 可用，共 ${storageSize(archiveInfo.total)}`
+                      : archiveInfo?.error || "正在检查磁盘状态…"}
+                  </span>
+                </div>
+                {cacheBusy && <span className="miniSpinner">检查中</span>}
+              </div>
+              <label className="cachePathLabel">
+                当前压缩目录
+                <div className="cachePathRow">
+                  <input
+                    value={cfg.archiveCacheDir}
+                    onChange={(e) => set("archiveCacheDir", e.target.value)}
+                    onBlur={() => inspectCache(cfg.archiveCacheDir)}
+                  />
+                  <button onClick={chooseArchiveCache}>选择磁盘或目录</button>
+                </div>
+              </label>
+              {cacheChanged && (
+                <div className="cachePending">
+                  新位置尚未应用；点击页面底部“保存所有设置”后，新任务才会使用它。
+                </div>
+              )}
+              <div className="driveGrid">
+                {archiveDrives.map((drive) => {
+                  const selected = cfg.archiveCacheDir
+                    .toLowerCase()
+                    .startsWith(drive.root.toLowerCase());
+                  return (
+                    <button
+                      key={drive.root}
+                      className={selected ? "selected" : ""}
+                      onClick={() => useArchiveDrive(drive.root)}
+                    >
+                      <span>{drive.root.slice(0, 1)}</span>
+                      <div>
+                        <b>{drive.root} 本地磁盘</b>
+                        <small>
+                          可用 {storageSize(drive.free)} / {storageSize(drive.total)}
+                        </small>
+                        <i>
+                          <em
+                            style={{
+                              width: `${drive.total ? Math.max(4, (drive.free / drive.total) * 100) : 0}%`,
+                            }}
+                          />
+                        </i>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </article>
+            <div className="cacheSide">
+              <article>
+                <Title n="DATA" h="缓存占用" p="只统计临时压缩目录" />
+                <div className="cacheNumbers">
+                  <div>
+                    <b>{storageSize(archiveInfo?.cacheBytes || 0)}</b>
+                    <span>当前占用</span>
+                  </div>
+                  <div>
+                    <b>{archiveInfo?.cacheFiles || 0}</b>
+                    <span>临时文件</span>
+                  </div>
+                </div>
+                <div className="cacheActions">
+                  <button
+                    disabled={cacheChanged || cacheBusy}
+                    onClick={async () => {
+                      try {
+                        await OpenArchiveCacheFolder();
+                        announce(
+                          "success",
+                          "已打开压缩目录",
+                          archiveInfo?.path || cfg.archiveCacheDir,
+                          2200,
+                        );
+                      } catch (e: any) {
+                        announce("error", "无法打开目录", String(e), 5200);
+                      }
+                    }}
+                  >
+                    打开目录
+                  </button>
+                  <button
+                    disabled={cacheChanged || cacheBusy}
+                    onClick={async () => {
+                      if (!confirm("确定清理已完成的临时压缩包？")) return;
+                      setCacheBusy(true);
+                      try {
+                        announce(
+                          "busy",
+                          "正在清理压缩缓存",
+                          "只会删除已经完成的 ZIP 临时文件",
+                        );
+                        setArchiveInfo(
+                          (await ClearArchiveCache()) as ArchiveCacheInfo,
+                        );
+                        setMsg("压缩缓存已清理");
+                        announce(
+                          "success",
+                          "压缩缓存已清理",
+                          "未触碰共享文件夹和其他类型文件",
+                        );
+                      } catch (e: any) {
+                        setMsg(String(e));
+                        announce("error", "缓存清理失败", String(e), 5200);
+                      } finally {
+                        setCacheBusy(false);
+                      }
+                    }}
+                  >
+                    清理缓存
+                  </button>
+                  <button
+                    disabled={cacheBusy}
+                    onClick={() => inspectCache(cfg.archiveCacheDir, true)}
+                  >
+                    重新检查
+                  </button>
+                </div>
+              </article>
+              <article className="cacheRules">
+                <Title n="SAFE" h="空间保护" p="打包前自动检查" />
+                <p>大文件夹开始压缩前，会预留原始容量加至少 512 MB 安全空间。</p>
+                <p>缓存目录不能与任何 WebDAV 共享文件夹重叠。</p>
+                <p>磁盘拔出或空间不足时会停止任务，不会自动改用 C 盘。</p>
+              </article>
+            </div>
           </div>
         )}
         {page === "security" && (
@@ -758,9 +1062,14 @@ export default function App() {
         )}
         <footer>
           <span className={msg ? "show" : ""}>{msg}</span>
-          {page === "settings" && (
-            <button disabled={busy} onClick={save}>
-              保存所有设置
+          {(page === "settings" || page === "cache") && (
+            <button
+              className={busy ? "saving" : ""}
+              disabled={busy}
+              onClick={save}
+            >
+              {busy && <i className="buttonSpinner dark" />}
+              {busy ? "正在保存…" : "保存所有设置"}
             </button>
           )}
         </footer>
@@ -806,6 +1115,17 @@ function size(n: number) {
     : n < 1048576
       ? (n / 1024).toFixed(1) + " KB"
       : (n / 1048576).toFixed(1) + " MB";
+}
+function storageSize(n: number) {
+  return n < 1024
+    ? `${n} B`
+    : n < 1048576
+      ? `${(n / 1024).toFixed(1)} KB`
+      : n < 1073741824
+        ? `${(n / 1048576).toFixed(1)} MB`
+        : n < 1099511627776
+          ? `${(n / 1073741824).toFixed(1)} GB`
+          : `${(n / 1099511627776).toFixed(1)} TB`;
 }
 function duration(n: number) {
   return !n

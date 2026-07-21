@@ -21,17 +21,18 @@ import (
 )
 
 type Config struct {
-	Folder       string            `json:"folder"`
-	Folders      []string          `json:"folders,omitempty"`
-	Port         int               `json:"port"`
-	Listen       string            `json:"listen"`
-	Username     string            `json:"username"`
-	PasswordHash string            `json:"passwordHash"`
-	ReadOnly     bool              `json:"readOnly"`
-	AutoStart    bool              `json:"autoStart"`
-	Temporary    []TemporaryAccess `json:"temporary,omitempty"`
-	Users        []UserAccount     `json:"users,omitempty"`
-	Invites      []Invite          `json:"invites,omitempty"`
+	Folder          string            `json:"folder"`
+	Folders         []string          `json:"folders,omitempty"`
+	Port            int               `json:"port"`
+	Listen          string            `json:"listen"`
+	Username        string            `json:"username"`
+	PasswordHash    string            `json:"passwordHash"`
+	ReadOnly        bool              `json:"readOnly"`
+	AutoStart       bool              `json:"autoStart"`
+	ArchiveCacheDir string            `json:"archiveCacheDir,omitempty"`
+	Temporary       []TemporaryAccess `json:"temporary,omitempty"`
+	Users           []UserAccount     `json:"users,omitempty"`
+	Invites         []Invite          `json:"invites,omitempty"`
 }
 
 type UserAccount struct {
@@ -74,15 +75,16 @@ type TemporaryView struct {
 }
 
 type Settings struct {
-	Folder      string   `json:"folder"`
-	Folders     []string `json:"folders"`
-	Port        int      `json:"port"`
-	Listen      string   `json:"listen"`
-	Username    string   `json:"username"`
-	Password    string   `json:"password"`
-	PasswordSet bool     `json:"passwordSet"`
-	ReadOnly    bool     `json:"readOnly"`
-	AutoStart   bool     `json:"autoStart"`
+	Folder          string   `json:"folder"`
+	Folders         []string `json:"folders"`
+	Port            int      `json:"port"`
+	Listen          string   `json:"listen"`
+	Username        string   `json:"username"`
+	Password        string   `json:"password"`
+	PasswordSet     bool     `json:"passwordSet"`
+	ReadOnly        bool     `json:"readOnly"`
+	AutoStart       bool     `json:"autoStart"`
+	ArchiveCacheDir string   `json:"archiveCacheDir"`
 }
 
 type Status struct {
@@ -152,7 +154,7 @@ func (a *App) settingsLocked() Settings {
 	if len(folders) == 0 && a.cfg.Folder != "" {
 		folders = []string{a.cfg.Folder}
 	}
-	return Settings{Folder: a.cfg.Folder, Folders: folders, Port: a.cfg.Port, Listen: a.cfg.Listen, Username: a.cfg.Username, PasswordSet: a.cfg.PasswordHash != "", ReadOnly: a.cfg.ReadOnly, AutoStart: a.cfg.AutoStart}
+	return Settings{Folder: a.cfg.Folder, Folders: folders, Port: a.cfg.Port, Listen: a.cfg.Listen, Username: a.cfg.Username, PasswordSet: a.cfg.PasswordHash != "", ReadOnly: a.cfg.ReadOnly, AutoStart: a.cfg.AutoStart, ArchiveCacheDir: archiveCacheDirForConfig(a.cfg.ArchiveCacheDir)}
 }
 
 func (a *App) SelectFolder() (string, error) {
@@ -256,6 +258,10 @@ func (a *App) SaveSettings(s Settings) (Settings, error) {
 	if s.Username == "" {
 		return Settings{}, errors.New("用户名不能为空")
 	}
+	archiveDir, err := validateArchiveCacheDir(s.ArchiveCacheDir, clean)
+	if err != nil {
+		return Settings{}, err
+	}
 	if s.Password != "" {
 		h, err := bcrypt.GenerateFromPassword([]byte(s.Password), bcrypt.DefaultCost)
 		if err != nil {
@@ -268,6 +274,7 @@ func (a *App) SaveSettings(s Settings) (Settings, error) {
 	a.cfg.Folders = clean
 	a.cfg.Folder = clean[0]
 	a.cfg.Port, a.cfg.Listen, a.cfg.Username, a.cfg.ReadOnly = s.Port, s.Listen, s.Username, s.ReadOnly
+	a.cfg.ArchiveCacheDir = archiveDir
 	if s.AutoStart != a.cfg.AutoStart {
 		if err := setAutoStart(s.AutoStart); err != nil {
 			return Settings{}, fmt.Errorf("设置自启动失败: %w", err)
@@ -276,6 +283,9 @@ func (a *App) SaveSettings(s Settings) (Settings, error) {
 	}
 	if err := a.saveConfig(); err != nil {
 		return Settings{}, err
+	}
+	if a.server != nil {
+		a.server.UpdateConfig(a.cfg)
 	}
 	return a.settingsLocked(), nil
 }

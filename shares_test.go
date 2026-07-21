@@ -1,8 +1,11 @@
 package main
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -74,7 +77,7 @@ func TestSafeRejectsTraversalOutsideShare(t *testing.T) {
 }
 
 func TestReadOnlyAllowsPagedBrowsingAndPreviews(t *testing.T) {
-	allowed := []string{"/api/files-page", "/api/office-preview"}
+	allowed := []string{"/api/logout", "/api/files-page", "/api/office-preview", "/api/folder-size"}
 	for _, path := range allowed {
 		if !readOnlyEndpoint(path) {
 			t.Errorf("read-only endpoint rejected: %s", path)
@@ -82,5 +85,73 @@ func TestReadOnlyAllowsPagedBrowsingAndPreviews(t *testing.T) {
 	}
 	if readOnlyEndpoint("/api/delete") {
 		t.Fatal("read-only user must not be allowed to delete")
+	}
+}
+
+func TestLogoutRevokesCurrentToken(t *testing.T) {
+	s := NewServer(Config{})
+	token := "logout-token"
+	s.tokens.Store(token, session{Main: true, Expires: time.Now().Add(time.Hour)})
+	request := httptest.NewRequest(http.MethodPost, "/api/logout", nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+
+	s.tokenAuth(http.HandlerFunc(s.logout)).ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("logout status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if _, exists := s.tokens.Load(token); exists {
+		t.Fatal("logout token was not revoked")
+	}
+}
+
+func TestPreviewStreamsVideoRangeWithSessionCookie(t *testing.T) {
+	root := t.TempDir()
+	content := []byte("0123456789-video-data")
+	if err := os.WriteFile(filepath.Join(root, "sample.mp4"), content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := NewServer(Config{Folders: []string{root}})
+	token := "video-cookie-token"
+	s.tokens.Store(token, session{Main: true, Expires: time.Now().Add(time.Hour)})
+	request := httptest.NewRequest(http.MethodGet, "/api/preview?path="+url.QueryEscape(shareName(root)+"/sample.mp4"), nil)
+	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	request.Header.Set("Range", "bytes=2-7")
+	response := httptest.NewRecorder()
+
+	s.tokenAuth(http.HandlerFunc(s.preview)).ServeHTTP(response, request)
+
+	if response.Code != http.StatusPartialContent {
+		t.Fatalf("preview status = %d, want %d", response.Code, http.StatusPartialContent)
+	}
+	body, err := io.ReadAll(response.Result().Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(body), string(content[2:8]); got != want {
+		t.Fatalf("preview range = %q, want %q", got, want)
+	}
+}
+
+func TestLogoutClearsSessionCookie(t *testing.T) {
+	s := NewServer(Config{})
+	token := "cookie-logout-token"
+	s.tokens.Store(token, session{Main: true, Expires: time.Now().Add(time.Hour)})
+	request := httptest.NewRequest(http.MethodPost, "/api/logout", nil)
+	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	response := httptest.NewRecorder()
+
+	s.tokenAuth(http.HandlerFunc(s.logout)).ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("logout status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if _, exists := s.tokens.Load(token); exists {
+		t.Fatal("logout cookie token was not revoked")
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) == 0 || cookies[0].Name != sessionCookieName || cookies[0].MaxAge >= 0 {
+		t.Fatalf("logout did not clear session cookie: %#v", cookies)
 	}
 }

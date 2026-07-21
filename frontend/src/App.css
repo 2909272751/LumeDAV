@@ -476,3 +476,188 @@ footer button {
 /* Desktop clarity: native Windows font metrics and a consistent 12px minimum. */
 body{font-family:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI",sans-serif;font-size:14px;text-rendering:geometricPrecision}
 button,input,select{font-family:inherit;font-size:14px}header p,.title>span{font-size:12px}header>div>span,.hero p,.title p,.row label,.aside-note span,.switch span,.tempList small{font-size:12px;line-height:1.5}.brand span,.state,.aside-note b,.switch b,.tempList b,.tempList button,.mini{font-size:13px}.title h3{font-size:16px}.hero h2{font-size:18px}h1{font-size:30px}.folderAdd{width:100%;border:1px dashed #586582;background:#11182d;color:#cbd5f4;border-radius:10px;padding:11px}.folderList{margin-top:10px;display:grid;gap:7px}.folderList>div{display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:center;gap:8px;background:#080d1c;border:1px solid #ffffff10;border-radius:10px;padding:9px 11px}.folderList b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}.folderList>div>span{color:#7dd3fc}.folderList button{border:0;background:none;color:#fb7185;font-size:12px}.brand img.mark{image-rendering:auto}
+
+.cacheAdmin {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(260px, .75fr);
+  gap: 14px;
+  margin-top: 28px;
+}
+.adminOperation {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  margin-top: 18px;
+  padding: 11px 14px;
+  border: 1px solid #52607d55;
+  border-radius: 13px;
+  background: #0c1328;
+  box-shadow: 0 12px 32px #03071235;
+  animation: operationIn .2s ease-out;
+}
+.adminOperation > i {
+  width: 23px;
+  height: 23px;
+  flex: 0 0 auto;
+  border: 3px solid #35415e;
+  border-top-color: #8b7cf6;
+  border-radius: 50%;
+  animation: spin .72s linear infinite;
+}
+.adminOperation > div { min-width: 0; flex: 1; }
+.adminOperation b, .adminOperation span { display: block; }
+.adminOperation b { font-size: 13px; color: #e7ebfa; }
+.adminOperation span { margin-top: 4px; color: #7f8baa; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.adminOperation.success { border-color: #4ade8035; background: #0d1d22; }
+.adminOperation.error { border-color: #fb718535; background: #20131e; }
+.adminOperation.success > i, .adminOperation.error > i {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: #4ade8020;
+  color: #86efac;
+  animation: none;
+}
+.adminOperation.success > i::after { content: "✓"; }
+.adminOperation.error > i { background: #fb718520; color: #fda4af; }
+.adminOperation.error > i::after { content: "!"; }
+.adminOperation > button { border: 0; background: transparent; color: #73809f; font-size: 18px; padding: 5px; }
+.buttonSpinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 8px;
+  vertical-align: -2px;
+  border: 2px solid #ffffff55;
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+.buttonSpinner.dark { border-color: #17203355; border-top-color: #172033; }
+.cacheAdmin article { margin: 0; }
+.cacheSide { display: grid; gap: 14px; align-content: start; }
+.cacheHealth {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 13px 14px;
+  border: 1px solid #ffffff10;
+  border-radius: 12px;
+  background: #080d1d;
+}
+.cacheHealth > i {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #fb7185;
+  box-shadow: 0 0 13px #fb718566;
+}
+.cacheHealth.ready > i {
+  background: #4ade80;
+  box-shadow: 0 0 13px #4ade8066;
+  animation: healthPulse 2s ease-in-out infinite;
+}
+.cacheHealth div { min-width: 0; flex: 1; }
+.cacheHealth b, .cacheHealth span { display: block; }
+.cacheHealth b { font-size: 14px; }
+.cacheHealth div span { margin-top: 4px; color: #7f8aaa; font-size: 12px; line-height: 1.5; }
+.cachePathLabel { display: block; margin-top: 18px; color: #8290b2; font-size: 12px; }
+.cachePathRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-top: 7px; }
+.cachePathRow input { margin: 0; }
+.cachePathRow button, .cacheActions button {
+  border: 1px solid #ffffff12;
+  border-radius: 9px;
+  background: #121a31;
+  color: #dce4fa;
+  padding: 9px 12px;
+}
+.cachePathRow button:hover, .cacheActions button:hover:not(:disabled) { border-color: #6978cf; background: #18213c; }
+.cachePending {
+  margin-top: 9px;
+  padding: 9px 11px;
+  border: 1px solid #fbbf2430;
+  border-radius: 9px;
+  background: #fbbf240d;
+  color: #fcd34d;
+  font-size: 12px;
+  animation: contentIn .2s ease-out;
+}
+.driveGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 14px; }
+.driveGrid > button {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid #ffffff10;
+  border-radius: 11px;
+  background: #080d1c;
+  color: #dce4fa;
+  text-align: left;
+}
+.driveGrid > button:hover { transform: translateY(-1px); border-color: #6673bb; }
+.driveGrid > button.selected { border-color: #6d63e9; background: #635bda14; box-shadow: inset 0 0 0 1px #6d63e933; }
+.driveGrid > button > span {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: #1b2542;
+  color: #9ca8ff;
+  font-weight: 700;
+}
+.driveGrid > button > div { min-width: 0; flex: 1; }
+.driveGrid b, .driveGrid small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.driveGrid b { font-size: 13px; }
+.driveGrid small { margin-top: 4px; color: #7783a3; font-size: 11px; }
+.driveGrid div > i { display: block; height: 4px; margin-top: 8px; overflow: hidden; border-radius: 8px; background: #242d46; }
+.driveGrid div > i > em { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #6658e8, #4d9cff); }
+.cacheNumbers { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.cacheNumbers > div { padding: 14px; border: 1px solid #ffffff0e; border-radius: 11px; background: #080d1c; }
+.cacheNumbers b, .cacheNumbers span { display: block; }
+.cacheNumbers b { font-size: 18px; }
+.cacheNumbers span { margin-top: 5px; color: #737f9f; font-size: 11px; }
+.cacheActions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+.cacheActions button { flex: 1; min-width: 88px; font-size: 12px; }
+.cacheActions button:disabled { cursor: not-allowed; opacity: .45; }
+.cacheRules p { position: relative; margin: 9px 0; padding-left: 14px; color: #7d88a7; font-size: 12px; line-height: 1.6; }
+.cacheRules p::before { content: ""; position: absolute; left: 0; top: .65em; width: 5px; height: 5px; border-radius: 50%; background: #7064ef; }
+.miniSpinner { flex: 0 0 auto; color: #a8b3d2 !important; }
+.miniSpinner::before {
+  content: "";
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 6px;
+  vertical-align: -2px;
+  border: 2px solid #7682a755;
+  border-top-color: #8b7cf6;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+nav button, article, .primary, .danger, .folder button, .cacheActions button, .driveGrid > button { transition: transform .16s ease, border-color .16s ease, background-color .16s ease, opacity .16s ease; }
+nav button:hover { background: #ffffff08; color: #c7d0e8; }
+.content > .grid, .content > .cacheAdmin, .content > .securityCards, .content > .adminLayout, .content > .enginePage { animation: contentIn .22s ease-out; }
+.state.on i { animation: healthPulse 2s ease-in-out infinite; }
+footer span.show { animation: messageIn .18s ease-out; }
+button:disabled { cursor: not-allowed; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes healthPulse { 50% { opacity: .65; box-shadow: 0 0 5px currentColor; } }
+@keyframes contentIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes messageIn { from { opacity: 0; transform: translateX(6px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes operationIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+@media (max-width: 1050px) {
+  .cacheAdmin { grid-template-columns: 1fr; }
+  .cacheSide { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 760px) {
+  .driveGrid, .cacheSide { grid-template-columns: 1fr; }
+  .cachePathRow { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

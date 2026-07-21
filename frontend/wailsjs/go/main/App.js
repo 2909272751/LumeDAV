@@ -6,6 +6,10 @@ export function CheckPort(arg1, arg2) {
   return window['go']['main']['App']['CheckPort'](arg1, arg2);
 }
 
+export function ClearArchiveCache() {
+  return window['go']['main']['App']['ClearArchiveCache']();
+}
+
 export function ClearOfficePreviewCache() {
   return window['go']['main']['App']['ClearOfficePreviewCache']();
 }
@@ -30,6 +34,10 @@ export function EmptyTrash() {
   return window['go']['main']['App']['EmptyTrash']();
 }
 
+export function GetArchiveDrives() {
+  return window['go']['main']['App']['GetArchiveDrives']();
+}
+
 export function GetDashboard() {
   return window['go']['main']['App']['GetDashboard']();
 }
@@ -44,6 +52,10 @@ export function GetStatus() {
 
 export function GetVersion() {
   return window['go']['main']['App']['GetVersion']();
+}
+
+export function InspectArchiveCache(arg1) {
+  return window['go']['main']['App']['InspectArchiveCache'](arg1);
 }
 
 export function ListInvites() {
@@ -66,6 +78,10 @@ export function OfficePreviewStatus() {
   return window['go']['main']['App']['OfficePreviewStatus']();
 }
 
+export function OpenArchiveCacheFolder() {
+  return window['go']['main']['App']['OpenArchiveCacheFolder']();
+}
+
 export function OpenLibreOfficeDownload() {
   return window['go']['main']['App']['OpenLibreOfficeDownload']();
 }
@@ -84,6 +100,10 @@ export function RevokeTemporaryAccess(arg1) {
 
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
+}
+
+export function SelectArchiveCacheFolder() {
+  return window['go']['main']['App']['SelectArchiveCacheFolder']();
 }
 
 export function SelectFolder() {

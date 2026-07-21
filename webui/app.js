@@ -5,6 +5,7 @@ const $ = (s) => document.querySelector(s),
   empty = $("#empty"),
   menu = $("#menu");
 let token = sessionStorage.token || "",
+  currentUsername = sessionStorage.lumedavUser || "",
   path = "",
   selected = null,
   readOnly = false,
@@ -18,13 +19,17 @@ let token = sessionStorage.token || "",
   archiveTask = null,
   archivePoll = 0,
   archiveDownloadStarted = false,
+  folderSizeAbort = null,
   fileDownloadAbort = null,
-  activePreviewURL = "";
+  previewAbort = null,
+  activePreviewURL = "",
+  activePreviewCleanup = null;
 const api = async (url, opt = {}) => {
   opt.headers = { ...(opt.headers || {}), Authorization: "Bearer " + token };
   const r = await fetch(url, opt);
   if (r.status === 401) {
     sessionStorage.removeItem("token");
+    sessionStorage.removeItem("lumedavUser");
     location.reload();
     throw Error("登录已过期");
   }
@@ -38,36 +43,101 @@ fetch("/api/version")
     document.title = "LumeDAV v" + version;
   })
   .catch(() => {});
-const invite = new URLSearchParams(location.search).get("invite");
-if (invite) {
-  login.classList.add("hidden");
-  $("#register").classList.remove("hidden");
-  $("#registerForm").onsubmit = async (e) => {
-    e.preventDefault();
-    const r = await fetch("/api/register", {
+const rememberedCredentialsKey = "lumedav.rememberedCredentials",
+  invite = new URLSearchParams(location.search).get("invite") || "";
+function showAuthPanel(panel) {
+  login.classList.toggle("hidden", panel !== "login");
+  $("#register").classList.toggle("hidden", panel !== "register");
+  $("#loginError").textContent = "";
+  $("#regError").textContent = "";
+}
+function removeInviteFromURL() {
+  const url = new URL(location.href);
+  if (!url.searchParams.has("invite")) return;
+  url.searchParams.delete("invite");
+  history.replaceState(history.state, "", url.pathname + url.search + url.hash);
+}
+try {
+  const remembered = JSON.parse(
+    localStorage.getItem(rememberedCredentialsKey) || "null",
+  );
+  if (remembered?.username && typeof remembered.password === "string") {
+    $("#user").value = remembered.username;
+    $("#pass").value = remembered.password;
+    $("#rememberPassword").checked = true;
+  }
+} catch {
+  try {
+    localStorage.removeItem(rememberedCredentialsKey);
+  } catch {}
+}
+$("#rememberPassword").onchange = (event) => {
+  if (event.target.checked) return;
+  try {
+    localStorage.removeItem(rememberedCredentialsKey);
+  } catch {}
+};
+$("#showRegister").onclick = () => showAuthPanel("register");
+$("#backToLogin").onclick = () => {
+  removeInviteFromURL();
+  showAuthPanel("login");
+};
+$("#registerForm").onsubmit = async (e) => {
+  e.preventDefault();
+  $("#regError").textContent = "";
+  const code = $("#regInvite").value.trim(),
+    username = $("#regUser").value.trim(),
+    password = $("#regPass").value,
+    confirmPassword = $("#regPassConfirm").value,
+    button = $("#registerForm .authPrimary");
+  if (!code) return ($("#regError").textContent = "请输入管理员邀请码");
+  if (!username || !password)
+    return ($("#regError").textContent = "账号和密码不能为空");
+  if (password !== confirmPassword)
+    return ($("#regError").textContent = "两次输入的密码不一致");
+  button.disabled = true;
+  button.textContent = "正在注册…";
+  try {
+    const response = await fetch("/api/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        code: invite,
-        username: $("#regUser").value,
-        password: $("#regPass").value,
-      }),
+      body: JSON.stringify({ code, username, password }),
     });
-    if (!r.ok) return ($("#regError").textContent = await r.text());
-    alert("注册成功，请使用新账号登录");
-    location.href = "/";
-  };
+    if (!response.ok) throw Error(await response.text());
+    $("#user").value = username;
+    $("#pass").value = "";
+    $("#regPass").value = "";
+    $("#regPassConfirm").value = "";
+    removeInviteFromURL();
+    showAuthPanel("login");
+    $("#loginMessage").textContent = "注册成功，请使用新账号登录";
+  } catch (error) {
+    $("#regError").textContent = error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = "完成注册";
+  }
+};
+if (invite) {
+  $("#regInvite").value = invite;
+  showAuthPanel("register");
 }
 $("#loginForm").onsubmit = async (e) => {
   e.preventDefault();
   $("#loginError").textContent = "";
+  $("#loginMessage").textContent = "";
+  const username = $("#user").value.trim(),
+    password = $("#pass").value,
+    button = $("#loginForm .authPrimary");
+  button.disabled = true;
+  button.textContent = "正在登录…";
   try {
     const r = await fetch("/api/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        username: $("#user").value,
-        password: $("#pass").value,
+        username,
+        password,
       }),
     });
     if (!r.ok) throw Error(await r.text());
@@ -75,14 +145,31 @@ $("#loginForm").onsubmit = async (e) => {
     token = d.token;
     readOnly = d.readOnly;
     sessionStorage.token = token;
+    currentUsername = username;
+    sessionStorage.lumedavUser = username;
+    try {
+      if ($("#rememberPassword").checked) {
+        localStorage.setItem(
+          rememberedCredentialsKey,
+          JSON.stringify({ username, password }),
+        );
+      } else {
+        localStorage.removeItem(rememberedCredentialsKey);
+      }
+    } catch {}
     showApp();
   } catch (x) {
     $("#loginError").textContent = x.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = "登录";
   }
 };
 async function showApp() {
   login.classList.add("hidden");
+  $("#register").classList.add("hidden");
   app.classList.remove("hidden");
+  updateAccountUI();
   const saved = history.state;
   if (saved?.lumeNavigation) {
     path = typeof saved.path === "string" ? saved.path : "";
@@ -101,6 +188,10 @@ async function load(reset = true) {
     requestedView = view,
     requestedOffset = reset ? 0 : pageOffset;
   pageLoading = true;
+  showFileLoading(
+    reset ? "正在读取文件" : "正在加载更多",
+    requestedView === "trash" ? "正在读取回收站" : "正在扫描当前目录",
+  );
   try {
     if (requestedView === "trash") {
       const items = (await api("/api/trash")) || [];
@@ -118,7 +209,10 @@ async function load(reset = true) {
     }
     render();
   } finally {
-    if (request === loadRequest) pageLoading = false;
+    if (request === loadRequest) {
+      pageLoading = false;
+      hideFileLoading();
+    }
   }
 }
 function render() {
@@ -139,12 +233,13 @@ function render() {
   $("#loadHint").textContent = hasMore
     ? `已加载 ${data.length} 项，每次加载 200 项`
     : "";
-  data.forEach((x) => {
+  data.forEach((x, index) => {
     const n = name(x),
       dir = x.isDir || x.IsDir,
       p = x.path || x.Original || "",
       row = document.createElement("div");
-    row.className = "file";
+    row.className = "file entering";
+    row.style.animationDelay = Math.min(index, 16) * 18 + "ms";
     row.innerHTML = `<div class="fileMain"><div class="fileIcon">${icon(n, dir)}</div><span class="fileName"></span></div><span class="fileMeta">${dir ? "文件夹" : size(x.size || x.Size || 0)}</span><span class="fileType">${dir ? "文件夹" : fileType(n)}</span><span class="fileDate">${new Date(x.modified || x.Deleted).toLocaleString()}</span><button class="more">⋯</button>`;
     row.querySelector(".fileName").textContent = n;
     row.querySelector(".fileMain").onclick = (e) =>
@@ -267,6 +362,24 @@ async function buildTree() {
     });
   markTree();
 }
+function showFileLoading(title, detail) {
+  $("#fileLoadingTitle").textContent = title;
+  $("#fileLoadingText").textContent = detail;
+  $("#fileLoading").classList.remove("hidden");
+}
+function hideFileLoading() {
+  $("#fileLoading").classList.add("hidden");
+}
+let operationTimer = 0;
+function showOperation(title, detail, state = "busy", autoHide = 0) {
+  clearTimeout(operationTimer);
+  const panel = $("#operationStatus");
+  $("#operationTitle").textContent = title;
+  $("#operationText").textContent = detail;
+  panel.className = "operationStatus " + state;
+  if (autoHide)
+    operationTimer = setTimeout(() => panel.classList.add("hidden"), autoHide);
+}
 function markTree() {
   $("#tree")
     .querySelectorAll("button")
@@ -279,15 +392,19 @@ function markTree() {
 }
 $("#upload").onchange = async (e) => {
   if (readOnly) return toast("当前账号为只读权限");
+  const count = e.target.files.length;
+  if (!count) return;
   const f = new FormData();
   f.append("path", path);
   [...e.target.files].forEach((x) => f.append("files", x));
-  toast("正在上传…");
+  showOperation("正在上传", `正在传输 ${count} 个文件，请保持页面打开`);
   try {
     await api("/api/upload", { method: "POST", body: f });
+    showOperation("上传完成", `${count} 个文件已保存`, "success", 2400);
     toast("上传完成");
     load();
   } catch (x) {
+    showOperation("上传失败", x.message, "error", 4500);
     toast(x.message);
   }
   e.target.value = "";
@@ -296,8 +413,19 @@ $("#newFolder").onclick = async () => {
   if (readOnly) return toast("当前账号为只读权限");
   const n = prompt("新文件夹名称");
   if (n) {
-    await json("/api/mkdir", { path, name: n });
-    load();
+    showOperation("正在创建文件夹", n);
+    try {
+      await api("/api/mkdir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, name: n }),
+      });
+      showOperation("创建完成", n, "success", 1800);
+      load();
+    } catch (error) {
+      showOperation("创建失败", error.message, "error", 4000);
+      toast(error.message);
+    }
   }
 };
 $("#refreshBtn").onclick = load;
@@ -309,12 +437,17 @@ $("#search").oninput = async (e) => {
   if (!q) return load();
   const request = ++loadRequest;
   pageLoading = false;
-  const results = (await api("/api/search?q=" + encodeURIComponent(q))) || [];
-  if (request !== loadRequest || e.target.value.trim() !== q) return;
-  current = results;
-  hasMore = false;
-  pageOffset = current.length;
-  render();
+  showFileLoading("正在搜索", `正在查找“${q}”`);
+  try {
+    const results = (await api("/api/search?q=" + encodeURIComponent(q))) || [];
+    if (request !== loadRequest || e.target.value.trim() !== q) return;
+    current = results;
+    hasMore = false;
+    pageOffset = current.length;
+    render();
+  } finally {
+    if (request === loadRequest) hideFileLoading();
+  }
 };
 $("#gridView").onclick = () => setMode("grid");
 $("#listView").onclick = () => setMode("list");
@@ -333,6 +466,7 @@ window.addEventListener("popstate", (event) => {
   hidePreview();
   hideArchiveDialog();
   hideFileDownloadDialog();
+  hideFolderSizeDialog(true);
   menu.classList.add("hidden");
   const state = event.state;
   if (!state?.lumeNavigation) return;
@@ -356,6 +490,8 @@ function openMenu(e, x) {
   const downloadButton = menu.querySelector('[data-act="download"]');
   downloadButton.style.display = inTrash ? "none" : "block";
   downloadButton.textContent = directory ? "打包下载" : "下载";
+  menu.querySelector('[data-act="size"]').style.display =
+    !inTrash && directory ? "block" : "none";
   menu.querySelector('[data-act="rename"]').style.display = inTrash
     ? "none"
     : "block";
@@ -363,13 +499,16 @@ function openMenu(e, x) {
     inTrash ? "block" : "none";
   menu.querySelector('[data-act="delete"]').style.display =
     inTrash ? "none" : "block";
-  menu.style.left = Math.min(e.clientX - 100, innerWidth - 150) + "px";
-  menu.style.top = Math.min(e.clientY, innerHeight - 190) + "px";
+  menu.style.left = Math.max(8, Math.min(e.clientX - 100, innerWidth - 158)) + "px";
   menu.classList.remove("hidden");
+  menu.style.top =
+    Math.max(8, Math.min(e.clientY, innerHeight - menu.offsetHeight - 8)) + "px";
   e.stopPropagation();
 }
 document.onclick = (e) => {
   if (!e.target.classList.contains("more")) menu.classList.add("hidden");
+  $("#accountMenu").classList.add("hidden");
+  $("#accountBtn").setAttribute("aria-expanded", "false");
 };
 menu.onclick = async (e) => {
   const a = e.target.dataset.act;
@@ -379,6 +518,7 @@ menu.onclick = async (e) => {
     if (isDirectory(selected)) startFolderDownload(selected);
     else download(selected.path);
   }
+  if (a === "size") startFolderSize(selected);
   if (a === "rename") {
     const n = prompt("新名称", selected.name);
     if (n) {
@@ -398,6 +538,74 @@ menu.onclick = async (e) => {
 function isDirectory(item) {
   return Boolean(item?.isDir || item?.IsDir);
 }
+async function startFolderSize(item) {
+  if (!item?.path) return toast("无法识别文件夹路径");
+  folderSizeAbort?.abort();
+  const controller = new AbortController();
+  folderSizeAbort = controller;
+  $("#folderSizeTitle").textContent = name(item);
+  $("#folderSizeState").textContent = "正在统计…";
+  $("#folderSizeMessage").textContent = "正在读取文件夹内容，请稍候";
+  $("#folderSizeProgress").classList.remove("hidden");
+  $("#folderSizeResult").classList.add("hidden");
+  $("#folderSizeCancel").textContent = "取消统计";
+  $("#folderSizeHint").textContent = "回收站、缓存和符号链接不会计入大小。";
+  $("#folderSizeDialog").classList.remove("hidden");
+  if (!history.state?.lumeFolderSize)
+    history.pushState(navigationState({ lumeFolderSize: true }), "");
+  try {
+    const result = await api(
+      "/api/folder-size?path=" + encodeURIComponent(item.path),
+      { signal: controller.signal },
+    );
+    if (folderSizeAbort !== controller) return;
+    $("#folderSizeState").textContent = "统计完成";
+    $("#folderSizeMessage").textContent = "已完成整个文件夹的大小统计";
+    $("#folderSizeProgress").classList.add("hidden");
+    $("#folderSizeResult").classList.remove("hidden");
+    $("#folderSizeBytes").textContent = size(result.bytes || 0);
+    $("#folderSizeFiles").textContent = formatCount(result.files || 0);
+    $("#folderSizeFolders").textContent = formatCount(result.folders || 0);
+    $("#folderSizeTime").textContent = formatDuration(result.durationMs || 0);
+    $("#folderSizeCancel").textContent = "关闭";
+    $("#folderSizeHint").textContent = result.skipped
+      ? `有 ${result.skipped} 个系统、缓存或无法读取的项目未计入。`
+      : "已统计全部可访问内容。";
+  } catch (error) {
+    if (folderSizeAbort !== controller) return;
+    $("#folderSizeProgress").classList.add("hidden");
+    $("#folderSizeState").textContent =
+      error.name === "AbortError" ? "统计已取消" : "统计失败";
+    $("#folderSizeMessage").textContent =
+      error.name === "AbortError" ? "已停止读取文件夹" : error.message;
+    $("#folderSizeCancel").textContent = "关闭";
+  } finally {
+    if (folderSizeAbort === controller) folderSizeAbort = null;
+  }
+}
+function formatCount(value) {
+  return new Intl.NumberFormat("zh-CN").format(value);
+}
+function formatDuration(milliseconds) {
+  if (milliseconds < 1000)
+    return milliseconds < 100 ? "<0.1 秒" : `${(milliseconds / 1000).toFixed(1)} 秒`;
+  if (milliseconds < 60000) return `${(milliseconds / 1000).toFixed(1)} 秒`;
+  return `${Math.floor(milliseconds / 60000)}分${Math.round((milliseconds % 60000) / 1000)}秒`;
+}
+function hideFolderSizeDialog(cancel = false) {
+  if (cancel) folderSizeAbort?.abort();
+  $("#folderSizeDialog").classList.add("hidden");
+}
+function closeFolderSizeDialog() {
+  const hasHistoryEntry = history.state?.lumeFolderSize;
+  hideFolderSizeDialog(true);
+  if (hasHistoryEntry) history.back();
+}
+$("#folderSizeClose").onclick = closeFolderSizeDialog;
+$("#folderSizeCancel").onclick = () => {
+  if (folderSizeAbort) folderSizeAbort.abort();
+  else closeFolderSizeDialog();
+};
 async function startFolderDownload(item) {
   if (!item?.path) return toast("无法识别文件夹路径");
   clearTimeout(archivePoll);
@@ -536,8 +744,11 @@ async function previewFile(x) {
   const ext = name(x).split(".").pop().toLowerCase();
   if (ext === "dwg")
     return toast("DWG 在线预览已移除，请下载后使用 CAD 软件打开");
-  try {
-    const officeFormats = [
+  clearPreviewResources();
+  const body = $("#previewBody"),
+    imageFormats = ["png", "jpg", "jpeg", "gif", "webp", "svg"],
+    videoFormats = ["mp4", "m4v", "mov", "webm", "ogv"],
+    officeFormats = [
       "doc",
       "docx",
       "xls",
@@ -548,30 +759,131 @@ async function previewFile(x) {
       "ods",
       "odp",
     ];
+  $("#previewName").textContent = name(x);
+  body.innerHTML = `<div class="previewLoading"><i></i><b>正在准备预览</b><span>${officeFormats.includes(ext) ? "正在转换 Office 文档，首次打开可能稍慢" : "正在读取文件内容"}</span></div>`;
+  history.pushState(navigationState({ lumePreview: true }), "");
+  $("#preview").classList.remove("hidden");
+  if (videoFormats.includes(ext)) {
+    showVideoPreview(body, x);
+    return;
+  }
+  const controller = new AbortController();
+  previewAbort = controller;
+  try {
     const endpoint = officeFormats.includes(ext)
           ? "/api/office-preview"
           : "/api/preview",
-      r = await api(endpoint + "?path=" + encodeURIComponent(x.path)),
+      r = await api(endpoint + "?path=" + encodeURIComponent(x.path), {
+        signal: controller.signal,
+      }),
       blob = await r.blob(),
-      u = URL.createObjectURL(blob),
-      body = $("#previewBody");
+      u = URL.createObjectURL(blob);
+    if (previewAbort !== controller) {
+      URL.revokeObjectURL(u);
+      return;
+    }
     setPreviewURL(u);
-    $("#previewName").textContent = name(x);
     if (officeFormats.includes(ext))
       body.innerHTML = `<iframe src="${u}"></iframe>`;
-    else if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext))
-      body.innerHTML = `<img src="${u}">`;
-    else if (["mp4", "webm"].includes(ext))
-      body.innerHTML = `<video src="${u}" controls autoplay></video>`;
+    else if (imageFormats.includes(ext)) setupImagePreview(body, u);
     else if (["mp3", "wav", "ogg"].includes(ext))
       body.innerHTML = `<audio src="${u}" controls autoplay></audio>`;
     else if (ext === "pdf") body.innerHTML = `<iframe src="${u}"></iframe>`;
     else body.innerHTML = `<pre>${esc(await blob.text())}</pre>`;
-    history.pushState(navigationState({ lumePreview: true }), "");
-    $("#preview").classList.remove("hidden");
   } catch (x) {
+    if (x.name === "AbortError") return;
+    if (!$("#preview").classList.contains("hidden"))
+      body.innerHTML = `<div class="previewLoading failed"><b>预览失败</b><span>${esc(x.message)}</span></div>`;
     toast(x.message);
+  } finally {
+    if (previewAbort === controller) previewAbort = null;
   }
+}
+
+function showVideoPreview(body, item) {
+  const source = "/api/preview?path=" + encodeURIComponent(item.path);
+  body.innerHTML = `<div class="videoPreview"><video controls playsinline preload="metadata" src="${source}"></video><div class="videoHint"><span>流式播放</span><span>支持拖动进度、音量和全屏</span></div></div>`;
+  const video = body.querySelector("video");
+  video.onerror = () => {
+    const detail = video.error?.message || "浏览器不支持该视频编码，请下载后播放";
+    body.innerHTML = `<div class="previewLoading failed"><b>视频无法播放</b><span>${esc(detail)}</span></div>`;
+  };
+  activePreviewCleanup = () => {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  };
+}
+
+function setupImagePreview(body, url) {
+  body.innerHTML = `<div class="imagePreview"><div class="previewTools"><button data-zoom="out" aria-label="缩小">−</button><span id="imageZoomValue">100%</span><button data-zoom="in" aria-label="放大">＋</button><button data-zoom="actual">1:1</button><button data-zoom="fit">适应窗口</button></div><div class="imageCanvas"><div class="imageSurface"><img src="${url}" alt="图片预览" draggable="false"></div></div></div>`;
+  const canvas = body.querySelector(".imageCanvas"),
+    surface = body.querySelector(".imageSurface"),
+    image = body.querySelector("img"),
+    value = body.querySelector("#imageZoomValue");
+  let scale = 1,
+    pinchDistance = 0,
+    pinchScale = 1;
+  const clamp = (next) => Math.max(0.1, Math.min(8, next));
+  const apply = (next) => {
+    scale = clamp(next);
+    const width = Math.max(1, image.naturalWidth * scale),
+      height = Math.max(1, image.naturalHeight * scale);
+    image.style.width = width + "px";
+    image.style.height = height + "px";
+    surface.style.width = Math.max(canvas.clientWidth, width) + "px";
+    surface.style.height = Math.max(canvas.clientHeight, height) + "px";
+    value.textContent = Math.round(scale * 100) + "%";
+  };
+  const fit = () => {
+    if (!image.naturalWidth || !image.naturalHeight) return;
+    apply(
+      Math.min(
+        1,
+        Math.max(0.1, (canvas.clientWidth - 32) / image.naturalWidth),
+        Math.max(0.1, (canvas.clientHeight - 32) / image.naturalHeight),
+      ),
+    );
+    canvas.scrollTo(0, 0);
+  };
+  image.onload = fit;
+  if (image.complete) fit();
+  body.querySelector('[data-zoom="out"]').onclick = () => apply(scale / 1.2);
+  body.querySelector('[data-zoom="in"]').onclick = () => apply(scale * 1.2);
+  body.querySelector('[data-zoom="actual"]').onclick = () => apply(1);
+  body.querySelector('[data-zoom="fit"]').onclick = fit;
+  const onWheel = (event) => {
+    event.preventDefault();
+    apply(scale * (event.deltaY < 0 ? 1.12 : 1 / 1.12));
+  };
+  const touchDistance = (touches) =>
+    Math.hypot(
+      touches[0].clientX - touches[1].clientX,
+      touches[0].clientY - touches[1].clientY,
+    );
+  const onTouchStart = (event) => {
+    if (event.touches.length !== 2) return;
+    pinchDistance = touchDistance(event.touches);
+    pinchScale = scale;
+  };
+  const onTouchMove = (event) => {
+    if (event.touches.length !== 2 || !pinchDistance) return;
+    event.preventDefault();
+    apply(pinchScale * (touchDistance(event.touches) / pinchDistance));
+  };
+  const onResize = () => {
+    if (scale < 1) fit();
+  };
+  canvas.addEventListener("wheel", onWheel, { passive: false });
+  canvas.addEventListener("touchstart", onTouchStart, { passive: true });
+  canvas.addEventListener("touchmove", onTouchMove, { passive: false });
+  window.addEventListener("resize", onResize);
+  activePreviewCleanup = () => {
+    canvas.removeEventListener("wheel", onWheel);
+    canvas.removeEventListener("touchstart", onTouchStart);
+    canvas.removeEventListener("touchmove", onTouchMove);
+    window.removeEventListener("resize", onResize);
+  };
 }
 
 function setPreviewURL(url) {
@@ -579,8 +891,17 @@ function setPreviewURL(url) {
   activePreviewURL = url;
 }
 
-function hidePreview() {
+function clearPreviewResources() {
+  previewAbort?.abort();
+  previewAbort = null;
+  if (activePreviewCleanup) activePreviewCleanup();
+  activePreviewCleanup = null;
   setPreviewURL("");
+}
+
+function hidePreview() {
+  clearPreviewResources();
+  $("#previewBody").innerHTML = "";
   $("#preview").classList.add("hidden");
 }
 $("#closePreview").onclick = () => {
@@ -735,6 +1056,33 @@ function toast(s) {
   t.classList.add("show");
   setTimeout(() => t.classList.remove("show"), 2200);
 }
+function updateAccountUI() {
+  const name = currentUsername || "已登录用户";
+  $("#accountName").textContent = name;
+  $("#accountInitial").textContent =
+    name === "已登录用户" ? "我" : name.slice(0, 1).toUpperCase();
+}
+$("#accountBtn").onclick = (event) => {
+  event.stopPropagation();
+  const accountMenu = $("#accountMenu"),
+    opening = accountMenu.classList.contains("hidden");
+  accountMenu.classList.toggle("hidden", !opening);
+  $("#accountBtn").setAttribute("aria-expanded", String(opening));
+};
+$("#accountMenu").onclick = (event) => event.stopPropagation();
+$("#logoutBtn").onclick = async () => {
+  const button = $("#logoutBtn");
+  button.disabled = true;
+  button.textContent = "正在退出…";
+  try {
+    await api("/api/logout", { method: "POST" });
+  } catch {}
+  sessionStorage.removeItem("token");
+  sessionStorage.removeItem("lumedavUser");
+  token = "";
+  currentUsername = "";
+  location.href = "/";
+};
 $("#davBtn").onclick = () => {
   navigator.clipboard.writeText(location.origin + "/dav/");
   toast("WebDAV 地址已复制");

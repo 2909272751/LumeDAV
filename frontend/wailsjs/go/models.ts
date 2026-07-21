@@ -1,5 +1,45 @@
 export namespace main {
+
+	export class ArchiveCacheInfo {
+	    path: string;
+	    total: number;
+	    free: number;
+	    cacheBytes: number;
+	    cacheFiles: number;
+	    available: boolean;
+	    error?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ArchiveCacheInfo(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.total = source["total"];
+	        this.free = source["free"];
+	        this.cacheBytes = source["cacheBytes"];
+	        this.cacheFiles = source["cacheFiles"];
+	        this.available = source["available"];
+	        this.error = source["error"];
+	    }
+	}
+	export class ArchiveDriveInfo {
+	    root: string;
+	    total: number;
+	    free: number;
+
+	    static createFrom(source: any = {}) {
+	        return new ArchiveDriveInfo(source);
+	    }
 	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.root = source["root"];
+	        this.total = source["total"];
+	        this.free = source["free"];
+	    }
+	}
 	export class Dashboard {
 	    running: boolean;
 	    uptime: number;
@@ -56,6 +96,7 @@ export namespace main {
 	    passwordSet: boolean;
 	    readOnly: boolean;
 	    autoStart: boolean;
+	    archiveCacheDir: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -72,6 +113,7 @@ export namespace main {
 	        this.passwordSet = source["passwordSet"];
 	        this.readOnly = source["readOnly"];
 	        this.autoStart = source["autoStart"];
+	        this.archiveCacheDir = source["archiveCacheDir"];
 	    }
 	}
 	export class Status {
@@ -179,4 +221,3 @@ export namespace main {
 	}
 
 }
-

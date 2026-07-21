@@ -99,7 +99,7 @@ func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ext := strings.ToLower(filepath.Ext(p))
-	allowed := map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true, ".svg": true, ".mp4": true, ".webm": true, ".mp3": true, ".wav": true, ".ogg": true, ".pdf": true, ".txt": true, ".md": true, ".json": true, ".xml": true, ".yaml": true, ".yml": true, ".log": true, ".go": true, ".js": true, ".ts": true, ".css": true, ".html": true}
+	allowed := map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true, ".svg": true, ".mp4": true, ".m4v": true, ".mov": true, ".webm": true, ".ogv": true, ".mp3": true, ".wav": true, ".ogg": true, ".pdf": true, ".txt": true, ".md": true, ".json": true, ".xml": true, ".yaml": true, ".yml": true, ".log": true, ".go": true, ".js": true, ".ts": true, ".css": true, ".html": true}
 	if !allowed[ext] {
 		http.Error(w, "此文件类型暂不支持预览", 415)
 		return

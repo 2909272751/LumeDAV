@@ -71,7 +71,7 @@ button {
   border-color: #1677ff;
   box-shadow: 0 0 0 3px #1677ff16;
 }
-.auth button,
+.auth .authPrimary,
 .upload {
   display: block;
   width: 100%;
@@ -83,11 +83,49 @@ button {
   padding: 12px;
   font-weight: 600;
 }
+.auth .rememberRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 15px;
+  cursor: pointer;
+  user-select: none;
+}
+.auth .rememberRow input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: #1677ff;
+}
+.auth .rememberRow small {
+  margin-left: auto;
+  color: #9aa6b5;
+  font-size: 11px;
+}
+.authSwitch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 18px;
+  color: #8a97a8;
+  font-size: 13px;
+}
+.authSwitch button {
+  border: 0;
+  padding: 4px;
+  background: transparent;
+  color: #1677ff;
+  font-weight: 600;
+}
 .auth em {
   display: block;
   color: #e5484d;
   font-size: 12px;
   margin-top: 10px;
+}
+.auth em.success {
+  color: #16865a;
 }
 .shell {
   min-height: 100vh;
@@ -103,6 +141,7 @@ button {
   padding: 0 22px;
   gap: 18px;
   z-index: 5;
+  position: relative;
 }
 .iconBtn {
   display: none;
@@ -146,6 +185,7 @@ button {
   border-radius: 9px;
   padding: 0 13px;
   color: #8a97a8;
+  min-width: 0;
 }
 .topSearch:focus-within {
   background: white;
@@ -156,6 +196,7 @@ button {
   background: transparent;
   outline: 0;
   width: 100%;
+  min-width: 0;
 }
 .userDot {
   margin-left: auto;
@@ -372,6 +413,8 @@ aside nav button.active {
   border: 1px solid #e4e9f0;
   border-radius: 0 0 11px 11px;
   min-height: 480px;
+  position: relative;
+  overflow: hidden;
 }
 .listHeader {
   display: none;
@@ -392,6 +435,48 @@ aside nav button.active {
 .file {
   position: relative;
   min-width: 0;
+}
+.file.entering {
+  animation: fileIn 0.24s ease-out both;
+}
+.fileLoading {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  background: #ffffffeb;
+  backdrop-filter: blur(2px);
+  text-align: center;
+}
+.fileLoading > i,
+.previewLoading > i,
+.operationStatus > i {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #dceaff;
+  border-top-color: #1677ff;
+  border-radius: 50%;
+  animation: statusSpin 0.75s linear infinite;
+}
+.fileLoading b,
+.fileLoading span,
+.previewLoading b,
+.previewLoading span,
+.operationStatus b,
+.operationStatus span {
+  display: block;
+}
+.fileLoading b {
+  color: #344258;
+  font-size: 15px;
+}
+.fileLoading span {
+  margin-top: 6px;
+  color: #8995a6;
+  font-size: 12px;
 }
 .gridMode .file {
   padding: 17px 10px 12px;
@@ -573,6 +658,55 @@ aside nav button.active {
   opacity: 1;
   transform: translate(-50%, 0);
 }
+.operationStatus {
+  position: fixed;
+  z-index: 31;
+  right: 24px;
+  bottom: 24px;
+  width: min(360px, calc(100vw - 32px));
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 14px 16px;
+  border: 1px solid #dce5ef;
+  border-radius: 13px;
+  background: #fff;
+  box-shadow: 0 18px 50px #33415526;
+  animation: statusIn 0.2s ease-out;
+}
+.operationStatus > i {
+  width: 23px;
+  height: 23px;
+  flex: 0 0 auto;
+}
+.operationStatus b {
+  color: #344258;
+  font-size: 13px;
+}
+.operationStatus span {
+  margin-top: 3px;
+  color: #8995a6;
+  font-size: 11px;
+}
+.operationStatus.success > i,
+.operationStatus.error > i {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: #e8f8ef;
+  color: #16865a;
+  animation: none;
+}
+.operationStatus.success > i::after {
+  content: "✓";
+}
+.operationStatus.error > i {
+  background: #fff0f0;
+  color: #e5484d;
+}
+.operationStatus.error > i::after {
+  content: "!";
+}
 .archiveDialog {
   position: fixed;
   inset: 0;
@@ -702,6 +836,105 @@ aside nav button.active {
   color: #a0aab8;
   font-size: 11px;
 }
+.folderSizeCard section {
+  padding-top: 24px;
+}
+.folderSizeResult > strong {
+  display: block;
+  color: #1677ff;
+  font-size: clamp(32px, 6vw, 42px);
+  letter-spacing: -1px;
+}
+.folderSizeResult > span {
+  display: block;
+  margin-top: 3px;
+  color: #8a97a8;
+  font-size: 12px;
+  border: 0;
+  font-weight: 700;
+  transition: transform 0.16s ease, background 0.16s ease;
+}
+.userDot:hover,
+.userDot[aria-expanded="true"] {
+  background: #dcecff;
+  transform: translateY(-1px);
+}
+.accountMenu {
+  position: absolute;
+  z-index: 40;
+  right: 18px;
+  top: 55px;
+  width: 210px;
+  padding: 8px;
+  border: 1px solid #dfe6ef;
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 18px 48px #33415524;
+  animation: menuIn 0.16s ease-out;
+}
+.accountMenu > div {
+  padding: 10px 11px 12px;
+  border-bottom: 1px solid #edf0f4;
+}
+.accountMenu small,
+.accountMenu b {
+  display: block;
+}
+.accountMenu small {
+  color: #98a3b2;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+.accountMenu b {
+  overflow: hidden;
+  color: #273142;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.accountMenu button {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 11px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #e5484d;
+  text-align: left;
+}
+.accountMenu button:hover {
+  background: #fff1f1;
+}
+.accountMenu button span {
+  margin-right: 9px;
+}
+.folderSizeResult > div {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 22px;
+}
+.folderSizeResult p {
+  margin: 0;
+  border: 1px solid #e8edf4;
+  border-radius: 12px;
+  padding: 13px 8px;
+  background: #f8faff;
+}
+.folderSizeResult p b,
+.folderSizeResult p span {
+  display: block;
+}
+.folderSizeResult p b {
+  overflow: hidden;
+  color: #334155;
+  font-size: 17px;
+  text-overflow: ellipsis;
+}
+.folderSizeResult p span {
+  margin-top: 4px;
+  color: #8b98aa;
+  font-size: 11px;
+}
 .preview {
   position: fixed;
   inset: 0;
@@ -739,10 +972,107 @@ aside nav button.active {
   overflow: auto;
   padding: 15px;
 }
-.preview img,
 .preview video {
   max-width: 100%;
   max-height: 100%;
+}
+.imagePreview {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 11px;
+  background: #f4f7fb;
+}
+.previewTools {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #fff;
+}
+.previewTools button {
+  min-width: 38px;
+  height: 34px;
+  padding: 0 11px;
+  border: 1px solid #dbe3ee;
+  border-radius: 8px;
+  background: #f7f9fc;
+  color: #536176;
+}
+.previewTools button:hover {
+  border-color: #b7d5ff;
+  background: #edf5ff;
+  color: #1677ff;
+}
+.previewTools span {
+  width: 58px;
+  color: #65748a;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.imageCanvas {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+  background-color: #eef2f7;
+  background-image:
+    linear-gradient(45deg, #e6ebf2 25%, transparent 25%),
+    linear-gradient(-45deg, #e6ebf2 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e6ebf2 75%),
+    linear-gradient(-45deg, transparent 75%, #e6ebf2 75%);
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+}
+.imageSurface {
+  display: grid;
+  place-items: center;
+  min-width: 100%;
+  min-height: 100%;
+}
+.imageSurface img {
+  display: block;
+  max-width: none;
+  max-height: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.videoPreview {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 11px;
+  background: #0b1020;
+}
+.videoPreview video {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+  object-fit: contain;
+  background: #05070d;
+}
+.videoHint {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 13px;
+  color: #9faac0;
+  font-size: 11px;
+}
+.videoHint span:first-child {
+  color: #7dd3fc;
 }
 .preview iframe {
   width: 100%;
@@ -759,6 +1089,55 @@ aside nav button.active {
 }
 .preview audio {
   width: min(500px, 90%);
+}
+.previewLoading {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  max-width: 420px;
+  padding: 30px;
+  text-align: center;
+}
+.previewLoading b {
+  color: #344258;
+  font-size: 17px;
+}
+.previewLoading span {
+  color: #8995a6;
+  line-height: 1.6;
+}
+.previewLoading.failed b {
+  color: #e5484d;
+}
+button,
+.file,
+.archiveCard,
+.preview > div {
+  transition: border-color 0.16s ease, background-color 0.16s ease, transform 0.16s ease;
+}
+.auth form,
+.archiveCard,
+.preview > div {
+  animation: cardIn 0.22s ease-out;
+}
+@keyframes statusSpin {
+  to { transform: rotate(360deg); }
+}
+@keyframes fileIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes menuIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes statusIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 @media (max-width: 760px) {
   .shell {
@@ -784,7 +1163,19 @@ aside nav button.active {
     font-size: 12px;
   }
   .userDot {
-    display: none;
+    display: grid;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 auto;
+  }
+  .accountMenu {
+    position: fixed;
+    top: 51px;
+    right: 10px;
+  }
+  .operationStatus {
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
   }
   aside {
     position: fixed;
@@ -877,5 +1268,41 @@ aside nav button.active {
   }
   .workspace footer span:last-child {
     display: none;
+  }
+  .preview {
+    padding: 8px;
+  }
+  .preview > div {
+    width: 100%;
+    height: calc(100vh - 16px);
+    border-radius: 14px;
+  }
+  .preview section {
+    padding: 8px;
+  }
+  .previewTools {
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+  .previewTools button,
+  .previewTools span {
+    flex: 0 0 auto;
+  }
+  .videoHint span:last-child {
+    display: none;
+  }
+}
+@media (max-width: 480px) {
+  .topbar { padding: 0 12px; gap: 10px; }
+  .wordmark b, .wordmark .webVersion { display: none; }
+  .wordmark img { width: 32px; height: 32px; }
+  .topSearch { padding: 0 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

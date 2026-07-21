@@ -80,6 +80,7 @@ func (s *Server) Start() error {
 	mux.Handle("/share/", http.HandlerFunc(s.temporaryDAV))
 	mux.HandleFunc("/api/login", s.login)
 	mux.HandleFunc("/api/register", s.register)
+	mux.Handle("/api/logout", s.tokenAuth(http.HandlerFunc(s.logout)))
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]string{"version": appVersion})
@@ -95,6 +96,7 @@ func (s *Server) Start() error {
 	mux.Handle("/api/folder-download/status", s.tokenAuth(http.HandlerFunc(s.folderArchiveStatus)))
 	mux.Handle("/api/folder-download/cancel", s.tokenAuth(http.HandlerFunc(s.folderArchiveCancel)))
 	mux.HandleFunc("/api/folder-download/content", s.folderArchiveContent)
+	mux.Handle("/api/folder-size", s.tokenAuth(http.HandlerFunc(s.folderSize)))
 	mux.Handle("/api/stats", s.tokenAuth(http.HandlerFunc(s.stats)))
 	mux.Handle("/api/search", s.tokenAuth(http.HandlerFunc(s.search)))
 	mux.Handle("/api/preview", s.tokenAuth(http.HandlerFunc(s.preview)))
@@ -175,7 +177,7 @@ func (s *Server) basicAuth(next http.Handler) http.Handler {
 }
 func (s *Server) tokenAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		t := sessionToken(r)
 		v, ok := s.tokens.Load(t)
 		if !ok || t == "" || time.Now().After(v.(session).Expires) {
 			s.tokens.Delete(t)
@@ -186,17 +188,67 @@ func (s *Server) tokenAuth(next http.Handler) http.Handler {
 			http.Error(w, "只读模式", 403)
 			return
 		}
+		if cookie, err := r.Cookie(sessionCookieName); err != nil || cookie.Value != t {
+			setSessionCookie(w, r, t, v.(session).Expires)
+		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+const sessionCookieName = "lumedav_session"
+
+func sessionToken(r *http.Request) string {
+	if token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")); token != "" {
+		return token
+	}
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil {
+		return ""
+	}
+	return cookie.Value
+}
+
+func setSessionCookie(w http.ResponseWriter, r *http.Request, token string, expires time.Time) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    token,
+		Path:     "/",
+		Expires:  expires,
+		MaxAge:   max(1, int(time.Until(expires).Seconds())),
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"),
+	})
+}
+
+func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Path:     "/",
+		MaxAge:   -1,
+		Expires:  time.Unix(1, 0),
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https"),
 	})
 }
 
 func readOnlyEndpoint(path string) bool {
 	switch path {
-	case "/api/files", "/api/files-page", "/api/download", "/api/folder-download/start", "/api/folder-download/status", "/api/folder-download/cancel", "/api/stats", "/api/search", "/api/preview", "/api/office-preview":
+	case "/api/logout", "/api/files", "/api/files-page", "/api/download", "/api/folder-download/start", "/api/folder-download/status", "/api/folder-download/cancel", "/api/folder-size", "/api/stats", "/api/search", "/api/preview", "/api/office-preview":
 		return true
 	default:
 		return false
 	}
+}
+func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method", http.StatusMethodNotAllowed)
+		return
+	}
+	s.tokens.Delete(sessionToken(r))
+	clearSessionCookie(w, r)
+	writeJSON(w, map[string]bool{"ok": true})
 }
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
@@ -243,6 +295,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	_, _ = rand.Read(b)
 	t := hex.EncodeToString(b)
 	s.tokens.Store(t, sess)
+	setSessionCookie(w, r, t, sess.Expires)
 	s.security.Lock()
 	delete(s.failures, ip)
 	s.security.Unlock()
@@ -302,7 +355,7 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) rootFor(r *http.Request) session {
-	t := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	t := sessionToken(r)
 	if v, ok := s.tokens.Load(t); ok {
 		return v.(session)
 	}

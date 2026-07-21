@@ -26,7 +26,16 @@
             id="pass"
             type="password"
             autocomplete="current-password" /></label
-        ><button>登录</button><em id="loginError"></em>
+        ><label class="rememberRow"
+          ><input id="rememberPassword" type="checkbox" /><span
+            >记住密码</span
+          ><small>仅限私人设备</small></label
+        ><button class="authPrimary" type="submit">登录</button>
+        <div class="authSwitch">
+          <span>还没有账号？</span
+          ><button id="showRegister" type="button">注册账号</button>
+        </div>
+        <em id="loginError"></em><em id="loginMessage" class="success"></em>
       </form>
     </div>
     <div id="register" class="auth hidden">
@@ -34,13 +43,28 @@
         <img src="/lumedav-logo.png" />
         <h1>创建访问账号</h1>
         <p>使用管理员发出的邀请加入文件空间</p>
-        <label>用户名<input id="regUser" autocomplete="username" /></label
+        <label
+          >邀请码<input
+            id="regInvite"
+            autocomplete="off"
+            placeholder="输入管理员提供的邀请码" /></label
+        ><label>用户名<input id="regUser" autocomplete="username" /></label
         ><label
           >密码<input
             id="regPass"
             type="password"
             autocomplete="new-password" /></label
-        ><button>完成注册</button><em id="regError"></em>
+        ><label
+          >确认密码<input
+            id="regPassConfirm"
+            type="password"
+            autocomplete="new-password" /></label
+        ><button class="authPrimary" type="submit">完成注册</button>
+        <div class="authSwitch">
+          <span>已有账号？</span
+          ><button id="backToLogin" type="button">返回登录</button>
+        </div>
+        <em id="regError"></em>
       </form>
     </div>
     <div id="app" class="shell hidden">
@@ -53,7 +77,13 @@
         <div class="topSearch">
           <span>⌕</span><input id="search" placeholder="搜索文件和文件夹" />
         </div>
-        <div class="userDot">●</div>
+        <button id="accountBtn" class="userDot" aria-label="账户菜单" aria-expanded="false">
+          <span id="accountInitial">我</span>
+        </button>
+        <div id="accountMenu" class="accountMenu hidden">
+          <div><small>当前账号</small><b id="accountName">已登录用户</b></div>
+          <button id="logoutBtn" type="button"><span>↪</span>退出登录</button>
+        </div>
       </header>
       <aside id="sidebar">
         <div class="sideTitle">文件空间</div>
@@ -108,6 +138,10 @@
             ><span>修改时间</span><span></span>
           </div>
           <div id="files" class="files"></div>
+          <div id="fileLoading" class="fileLoading hidden" aria-live="polite">
+            <i></i>
+            <div><b id="fileLoadingTitle">正在读取文件</b><span id="fileLoadingText">正在连接这台设备，请稍候</span></div>
+          </div>
           <div id="empty" class="empty hidden">
             <div>▱</div>
             <h2>这里还没有文件</h2>
@@ -124,13 +158,44 @@
         </footer>
       </main>
       <div id="toast" class="toast"></div>
+      <div id="operationStatus" class="operationStatus hidden" aria-live="polite">
+        <i></i><div><b id="operationTitle">正在处理</b><span id="operationText">请稍候</span></div>
+      </div>
     </div>
     <div id="menu" class="context hidden">
       <button data-act="preview">预览</button
       ><button data-act="download">下载</button
+      ><button data-act="size">统计大小</button
       ><button data-act="rename">重命名</button
       ><button data-act="restore">恢复</button
       ><button data-act="delete" class="danger">移入回收站</button>
+    </div>
+    <div id="folderSizeDialog" class="archiveDialog hidden">
+      <div class="archiveCard folderSizeCard">
+        <header>
+          <div><span>SIZE</span><b id="folderSizeTitle">文件夹大小</b></div>
+          <button id="folderSizeClose" aria-label="关闭">×</button>
+        </header>
+        <section>
+          <div id="folderSizeState" class="archiveState">正在统计…</div>
+          <p id="folderSizeMessage">正在读取文件夹内容，请稍候</p>
+          <div id="folderSizeProgress" class="archiveProgress">
+            <i class="indeterminate"></i>
+          </div>
+          <div id="folderSizeResult" class="folderSizeResult hidden">
+            <strong id="folderSizeBytes">0 B</strong><span>文件夹大小</span>
+            <div>
+              <p><b id="folderSizeFiles">0</b><span>文件</span></p>
+              <p><b id="folderSizeFolders">0</b><span>子文件夹</span></p>
+              <p><b id="folderSizeTime">0 秒</b><span>统计用时</span></p>
+            </div>
+          </div>
+          <div class="archiveActions">
+            <button id="folderSizeCancel">取消统计</button>
+          </div>
+          <small id="folderSizeHint">回收站、缓存和符号链接不会计入大小。</small>
+        </section>
+      </div>
     </div>
     <div id="archiveDialog" class="archiveDialog hidden">
       <div class="archiveCard">

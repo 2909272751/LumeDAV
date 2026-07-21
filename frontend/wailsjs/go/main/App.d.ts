@@ -4,6 +4,8 @@ import {main} from '../models';
 
 export function CheckPort(arg1:number,arg2:string):Promise<string>;
 
+export function ClearArchiveCache():Promise<main.ArchiveCacheInfo>;
+
 export function ClearOfficePreviewCache():Promise<void>;
 
 export function CreateInvite(arg1:number,arg2:boolean):Promise<main.Invite>;
@@ -16,6 +18,8 @@ export function DeleteUser(arg1:string):Promise<void>;
 
 export function EmptyTrash():Promise<void>;
 
+export function GetArchiveDrives():Promise<Array<main.ArchiveDriveInfo>>;
+
 export function GetDashboard():Promise<main.Dashboard>;
 
 export function GetSettings():Promise<main.Settings>;
@@ -23,6 +27,8 @@ export function GetSettings():Promise<main.Settings>;
 export function GetStatus():Promise<main.Status>;
 
 export function GetVersion():Promise<string>;
+
+export function InspectArchiveCache(arg1:string):Promise<main.ArchiveCacheInfo>;
 
 export function ListInvites():Promise<Array<main.Invite>>;
 
@@ -34,6 +40,8 @@ export function ListUsers():Promise<Array<main.UserView>>;
 
 export function OfficePreviewStatus():Promise<string>;
 
+export function OpenArchiveCacheFolder():Promise<void>;
+
 export function OpenLibreOfficeDownload():Promise<void>;
 
 export function RestoreTrash(arg1:string):Promise<void>;
@@ -43,6 +51,8 @@ export function RevokeInvite(arg1:string):Promise<void>;
 export function RevokeTemporaryAccess(arg1:string):Promise<void>;
 
 export function SaveSettings(arg1:main.Settings):Promise<main.Settings>;
+
+export function SelectArchiveCacheFolder():Promise<string>;
 
 export function SelectFolder():Promise<string>;
 

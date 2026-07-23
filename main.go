@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"os"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -22,6 +23,8 @@ func main() {
 		Height:    720,
 		MinWidth:  860,
 		MinHeight: 620,
+		StartHidden: hasLaunchArg(os.Args[1:], "--autostart") ||
+			hasLaunchArg(os.Args[1:], "--shutdown-for-update"),
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
@@ -29,6 +32,10 @@ func main() {
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
 		OnBeforeClose:    app.beforeClose,
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId:               "f62e20de-12ba-4b52-b139-0fb0748b16ad",
+			OnSecondInstanceLaunch: app.secondInstanceLaunch,
+		},
 		Bind: []interface{}{
 			app,
 		},

@@ -15,9 +15,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"golang.org/x/crypto/bcrypt"
-	"golang.org/x/sys/windows/registry"
 )
 
 type Config struct {
@@ -122,16 +122,49 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	a.startTray()
-	if a.cfg.AutoStart {
-		_ = setAutoStart(true)
+	if hasLaunchArg(os.Args[1:], "--shutdown-for-update") {
+		a.mu.Lock()
+		a.quitting = true
+		a.mu.Unlock()
+		runtime.Quit(ctx)
+		return
 	}
-	if len(os.Args) > 1 && os.Args[1] == "--autostart" && a.configReady() {
+	a.startTray()
+	// Reconcile the registry on every launch. This repairs a missing or stale
+	// executable path after an install/upgrade and removes orphaned entries when
+	// the setting is disabled.
+	_ = setAutoStart(a.cfg.AutoStart)
+	if hasLaunchArg(os.Args[1:], "--autostart") && a.configReady() {
 		_ = a.startLocked()
+	}
+	if hasLaunchArg(os.Args[1:], "--autostart") {
+		// A Windows sign-in launch belongs in the tray and must not interrupt the
+		// desktop with a management window.
+		runtime.WindowHide(ctx)
 	}
 }
 
 func (a *App) shutdown(context.Context) { _ = a.stopLocked() }
+
+func (a *App) secondInstanceLaunch(data options.SecondInstanceData) {
+	if hasLaunchArg(data.Args, "--shutdown-for-update") {
+		a.mu.Lock()
+		a.quitting = true
+		a.mu.Unlock()
+		if a.ctx != nil {
+			runtime.Quit(a.ctx)
+		}
+		return
+	}
+	// A duplicate sign-in launch should remain silent. A normal second launch
+	// means the user clicked the shortcut and expects to see the management UI.
+	if hasLaunchArg(data.Args, "--autostart") || a.ctx == nil {
+		return
+	}
+	runtime.WindowShow(a.ctx)
+	runtime.WindowUnminimise(a.ctx)
+}
+
 func (a *App) beforeClose(ctx context.Context) bool {
 	a.mu.Lock()
 	q := a.quitting
@@ -147,6 +180,23 @@ func (a *App) GetSettings() Settings {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.settingsLocked()
+}
+
+func (a *App) GetAutoStartStatus() AutoStartStatus {
+	a.mu.Lock()
+	enabled := a.cfg.AutoStart
+	a.mu.Unlock()
+	return inspectAutoStart(enabled)
+}
+
+func (a *App) RepairAutoStart() (AutoStartStatus, error) {
+	a.mu.Lock()
+	enabled := a.cfg.AutoStart
+	a.mu.Unlock()
+	if err := setAutoStart(enabled); err != nil {
+		return inspectAutoStart(enabled), err
+	}
+	return inspectAutoStart(enabled), nil
 }
 
 func (a *App) settingsLocked() Settings {
@@ -275,12 +325,12 @@ func (a *App) SaveSettings(s Settings) (Settings, error) {
 	a.cfg.Folder = clean[0]
 	a.cfg.Port, a.cfg.Listen, a.cfg.Username, a.cfg.ReadOnly = s.Port, s.Listen, s.Username, s.ReadOnly
 	a.cfg.ArchiveCacheDir = archiveDir
-	if s.AutoStart != a.cfg.AutoStart {
-		if err := setAutoStart(s.AutoStart); err != nil {
-			return Settings{}, fmt.Errorf("设置自启动失败: %w", err)
-		}
-		a.cfg.AutoStart = s.AutoStart
+	// Always write the desired state, even when the checkbox did not change.
+	// This self-heals paths left behind by portable builds and old versions.
+	if err := setAutoStart(s.AutoStart); err != nil {
+		return Settings{}, fmt.Errorf("设置自启动失败: %w", err)
 	}
+	a.cfg.AutoStart = s.AutoStart
 	if err := a.saveConfig(); err != nil {
 		return Settings{}, err
 	}
@@ -526,26 +576,6 @@ func (a *App) saveConfig() error {
 	}
 	b, _ := json.MarshalIndent(a.cfg, "", "  ")
 	return os.WriteFile(p, b, 0600)
-}
-
-func setAutoStart(enable bool) error {
-	k, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Run`, registry.SET_VALUE)
-	if err != nil {
-		return err
-	}
-	defer k.Close()
-	if !enable {
-		err := k.DeleteValue("LumeDAV")
-		if err == registry.ErrNotExist {
-			return nil
-		}
-		return err
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	return k.SetStringValue("LumeDAV", `"`+exe+`" --autostart`)
 }
 
 func localIPs() []string {

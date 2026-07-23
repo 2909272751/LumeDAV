@@ -483,6 +483,41 @@ button,input,select{font-family:inherit;font-size:14px}header p,.title>span{font
   gap: 14px;
   margin-top: 28px;
 }
+.autoStartHealth {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  margin: 9px 0 13px;
+  padding: 11px 12px;
+  border: 1px solid #fb718533;
+  border-radius: 11px;
+  background: #fb71850a;
+}
+.autoStartHealth > i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #fb7185;
+  box-shadow: 0 0 11px #fb718566;
+}
+.autoStartHealth.healthy { border-color: #4ade8030; background: #4ade8009; }
+.autoStartHealth.healthy > i { background: #4ade80; box-shadow: 0 0 11px #4ade8066; }
+.autoStartHealth.pending { border-color: #fbbf2430; background: #fbbf2409; }
+.autoStartHealth.pending > i { background: #fbbf24; box-shadow: 0 0 11px #fbbf2466; }
+.autoStartHealth b, .autoStartHealth span, .autoStartHealth small { display: block; }
+.autoStartHealth b { color: #e4e9f9; font-size: 13px; }
+.autoStartHealth span { margin-top: 3px; color: #8995b4; font-size: 12px; line-height: 1.45; }
+.autoStartHealth small { max-width: 390px; margin-top: 4px; color: #65708d; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.autoStartHealth button {
+  border: 1px solid #7468eb55;
+  border-radius: 8px;
+  background: #6b5ee8;
+  color: #fff;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+.autoStartHealth button:hover:not(:disabled) { background: #786bf1; }
 .adminOperation {
   display: flex;
   align-items: center;

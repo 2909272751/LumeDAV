@@ -10,6 +10,7 @@ import {
   EmptyTrash,
   GetDashboard,
   GetArchiveDrives,
+  GetAutoStartStatus,
   GetSettings,
   GetStatus,
   GetVersion,
@@ -24,6 +25,7 @@ import {
   RestoreTrash,
   RevokeTemporaryAccess,
   RevokeInvite,
+  RepairAutoStart,
   SaveSettings,
   SelectArchiveCacheFolder,
   SelectFolder,
@@ -48,6 +50,15 @@ type Settings = {
   archiveCacheDir: string;
 };
 type ArchiveDriveInfo = { root: string; total: number; free: number };
+type AutoStartStatus = {
+  configured: boolean;
+  registered: boolean;
+  healthy: boolean;
+  windowsDisabled: boolean;
+  expectedPath: string;
+  registeredCommand: string;
+  message: string;
+};
 type ArchiveCacheInfo = {
   path: string;
   total: number;
@@ -109,6 +120,9 @@ export default function App() {
     [officeStatus, setOfficeStatus] = useState("missing"),
     [archiveDrives, setArchiveDrives] = useState<ArchiveDriveInfo[]>([]),
     [archiveInfo, setArchiveInfo] = useState<ArchiveCacheInfo | null>(null),
+    [autoStartStatus, setAutoStartStatus] =
+      useState<AutoStartStatus | null>(null),
+    [autoStartBusy, setAutoStartBusy] = useState(false),
     [savedArchivePath, setSavedArchivePath] = useState(""),
     [cacheBusy, setCacheBusy] = useState(false),
     [temp, setTemp] = useState({
@@ -144,6 +158,9 @@ export default function App() {
   };
   useEffect(() => {
     GetVersion().then(setVersion);
+    GetAutoStartStatus().then((value) =>
+      setAutoStartStatus(value as AutoStartStatus),
+    );
     GetArchiveDrives().then((items) => setArchiveDrives(items || []));
     GetSettings().then((x) => {
       const v = x as Settings;
@@ -176,6 +193,9 @@ export default function App() {
       setSavedArchivePath(next.archiveCacheDir);
       setArchiveInfo(
         (await InspectArchiveCache(next.archiveCacheDir)) as ArchiveCacheInfo,
+      );
+      setAutoStartStatus(
+        (await GetAutoStartStatus()) as AutoStartStatus,
       );
       setMsg("设置已保存");
       announce("success", "设置已保存", "新的压缩与服务设置已经生效");
@@ -211,6 +231,27 @@ export default function App() {
     } finally {
       setServiceBusy(false);
       await refresh();
+    }
+  }
+  async function repairAutoStart() {
+    setAutoStartBusy(true);
+    announce(
+      "busy",
+      "正在修复自启动",
+      "正在重新登记安装路径并清理 Windows 的禁用记录",
+    );
+    try {
+      const next = (await RepairAutoStart()) as AutoStartStatus;
+      setAutoStartStatus(next);
+      if (!next.healthy) throw Error(next.message || "自启动仍未恢复");
+      announce("success", "自启动已修复", next.message);
+    } catch (e: any) {
+      setAutoStartStatus(
+        (await GetAutoStartStatus()) as AutoStartStatus,
+      );
+      announce("error", "修复自启动失败", String(e), 5200);
+    } finally {
+      setAutoStartBusy(false);
     }
   }
   async function inspectCache(path: string, notify = false) {
@@ -492,10 +533,51 @@ export default function App() {
               <Title n="04" h="运行偏好" p="后台运行与访问权限" />
               <Switch
                 t="开机自动启动"
-                d="登录 Windows 后自动启动"
+                d="登录 Windows 后自动启动服务，并静默驻留系统托盘"
                 v={cfg.autoStart}
                 f={(v) => set("autoStart", v)}
               />
+              <div
+                className={`autoStartHealth ${
+                  cfg.autoStart !== autoStartStatus?.configured
+                    ? "pending"
+                    : autoStartStatus?.healthy
+                      ? "healthy"
+                      : "unhealthy"
+                }`}
+              >
+                <i />
+                <div>
+                  <b>
+                    {cfg.autoStart !== autoStartStatus?.configured
+                      ? "设置尚未保存"
+                      : autoStartStatus?.healthy
+                        ? cfg.autoStart
+                          ? "启动项正常"
+                          : "自启动已关闭"
+                        : "启动项需要修复"}
+                  </b>
+                  <span>
+                    {cfg.autoStart !== autoStartStatus?.configured
+                      ? "点击页面底部的“保存所有设置”后生效"
+                      : autoStartStatus?.message || "正在读取 Windows 启动状态…"}
+                  </span>
+                  {!!autoStartStatus?.expectedPath && cfg.autoStart && (
+                    <small title={autoStartStatus.expectedPath}>
+                      当前程序：{autoStartStatus.expectedPath}
+                    </small>
+                  )}
+                </div>
+                {cfg.autoStart === autoStartStatus?.configured &&
+                  !autoStartStatus?.healthy && (
+                    <button
+                      disabled={autoStartBusy}
+                      onClick={repairAutoStart}
+                    >
+                      {autoStartBusy ? "修复中…" : "一键修复"}
+                    </button>
+                  )}
+              </div>
               <Switch
                 t="主账号只读"
                 d="禁止修改和删除文件"

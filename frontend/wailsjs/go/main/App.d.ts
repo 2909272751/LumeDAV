@@ -20,6 +20,8 @@ export function EmptyTrash():Promise<void>;
 
 export function GetArchiveDrives():Promise<Array<main.ArchiveDriveInfo>>;
 
+export function GetAutoStartStatus():Promise<main.AutoStartStatus>;
+
 export function GetDashboard():Promise<main.Dashboard>;
 
 export function GetSettings():Promise<main.Settings>;
@@ -43,6 +45,8 @@ export function OfficePreviewStatus():Promise<string>;
 export function OpenArchiveCacheFolder():Promise<void>;
 
 export function OpenLibreOfficeDownload():Promise<void>;
+
+export function RepairAutoStart():Promise<main.AutoStartStatus>;
 
 export function RestoreTrash(arg1:string):Promise<void>;
 

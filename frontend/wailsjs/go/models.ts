@@ -40,6 +40,30 @@ export namespace main {
 	        this.free = source["free"];
 	    }
 	}
+	export class AutoStartStatus {
+	    configured: boolean;
+	    registered: boolean;
+	    healthy: boolean;
+	    windowsDisabled: boolean;
+	    expectedPath: string;
+	    registeredCommand: string;
+	    message: string;
+
+	    static createFrom(source: any = {}) {
+	        return new AutoStartStatus(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.configured = source["configured"];
+	        this.registered = source["registered"];
+	        this.healthy = source["healthy"];
+	        this.windowsDisabled = source["windowsDisabled"];
+	        this.expectedPath = source["expectedPath"];
+	        this.registeredCommand = source["registeredCommand"];
+	        this.message = source["message"];
+	    }
+	}
 	export class Dashboard {
 	    running: boolean;
 	    uptime: number;

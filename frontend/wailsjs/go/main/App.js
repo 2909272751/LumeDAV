@@ -38,6 +38,10 @@ export function GetArchiveDrives() {
   return window['go']['main']['App']['GetArchiveDrives']();
 }
 
+export function GetAutoStartStatus() {
+  return window['go']['main']['App']['GetAutoStartStatus']();
+}
+
 export function GetDashboard() {
   return window['go']['main']['App']['GetDashboard']();
 }
@@ -84,6 +88,10 @@ export function OpenArchiveCacheFolder() {
 
 export function OpenLibreOfficeDownload() {
   return window['go']['main']['App']['OpenLibreOfficeDownload']();
+}
+
+export function RepairAutoStart() {
+  return window['go']['main']['App']['RepairAutoStart']();
 }
 
 export function RestoreTrash(arg1) {
